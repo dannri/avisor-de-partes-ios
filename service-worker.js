@@ -4,7 +4,7 @@
  *
  * To force users to pick up a new app version: bump CACHE_VERSION.
  */
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const CACHE_NAME = 'avisor-de-partes-ios-' + CACHE_VERSION;
 
 const PRECACHE_URLS = [
