@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- No indexar en buscadores. La URL solo la conocen los usuarios autorizados. -->
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+  <meta name="googlebot" content="noindex, nofollow" />
+  <meta name="bingbot" content="noindex, nofollow" />
   <title>AVISOR DE PARTES</title>
 
   <!-- PWA / iPad -->
@@ -169,6 +173,45 @@
       var SALT = 'avisor-partes-2026-iPad';
       var ITERATIONS = 250000;
       var STORAGE_KEY = '__avisor_auth_v2__';
+      var LOCK_KEY = '__avisor_lock_v1__';
+
+      // Rate-limit de intentos fallidos:
+      //   1-4 fallos: sin bloqueo
+      //   5  fallos: 5 minutos
+      //   6-9       : 5 minutos
+      //   10-19     : 1 hora
+      //   20+       : 24 horas
+      // Persiste en localStorage. Un atacante puede limpiarlo borrando
+      // datos de Safari, pero eso es fricción suficiente para descartar
+      // ataques automatizados casuales.
+      function getLock() {
+        try {
+          var raw = localStorage.getItem(LOCK_KEY);
+          if (!raw) return { attempts: 0, lockUntil: 0 };
+          var obj = JSON.parse(raw);
+          return { attempts: obj.attempts|0, lockUntil: obj.lockUntil|0 };
+        } catch (e) { return { attempts: 0, lockUntil: 0 }; }
+      }
+      function saveLock(l) {
+        try { localStorage.setItem(LOCK_KEY, JSON.stringify(l)); } catch (e) {}
+      }
+      function clearLock() {
+        try { localStorage.removeItem(LOCK_KEY); } catch (e) {}
+      }
+      function lockDurationFor(attempts) {
+        if (attempts < 5)  return 0;
+        if (attempts < 10) return 5  * 60 * 1000;
+        if (attempts < 20) return 60 * 60 * 1000;
+        return 24 * 60 * 60 * 1000;
+      }
+      function fmtRemaining(ms) {
+        var s = Math.ceil(ms / 1000);
+        if (s < 60)    return s + ' s';
+        var m = Math.ceil(s / 60);
+        if (m < 60)    return m + ' min';
+        var h = Math.ceil(m / 60);
+        return h + ' h';
+      }
 
       function pbkdf2Hex(pwd) {
         var enc = new TextEncoder();
@@ -211,19 +254,57 @@
       var input = document.getElementById('__gate_pwd__');
       var btn = document.getElementById('__gate_ok__');
       var err = document.getElementById('__gate_err__');
+      var __lockTimer = null;
+
+      function applyLockUI(remainingMs) {
+        if (__lockTimer) { clearTimeout(__lockTimer); __lockTimer = null; }
+        btn.disabled = true;
+        input.disabled = true;
+        input.value = '';
+        err.textContent = 'Demasiados intentos. Espera ' + fmtRemaining(remainingMs) + '.';
+        __lockTimer = setTimeout(function () {
+          var lock = getLock();
+          var rem = lock.lockUntil - Date.now();
+          if (rem > 0) {
+            applyLockUI(rem);
+          } else {
+            btn.disabled = false;
+            input.disabled = false;
+            err.textContent = '';
+            try { input.focus(); } catch (e) {}
+          }
+        }, Math.min(remainingMs, 1000));
+      }
 
       function tryAuth() {
+        var lock = getLock();
+        var now = Date.now();
+        if (lock.lockUntil > now) {
+          applyLockUI(lock.lockUntil - now);
+          return;
+        }
         btn.disabled = true;
         err.textContent = 'Comprobando...';
         pbkdf2Hex(input.value).then(function (hex) {
           if (hex === HASH) {
+            clearLock();
             try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) {}
             loadApp();
           } else {
-            btn.disabled = false;
-            err.textContent = 'Contraseña incorrecta';
-            input.value = '';
-            input.focus();
+            // Fallo: incrementar contador y aplicar bloqueo si toca
+            var l = getLock();
+            l.attempts = (l.attempts|0) + 1;
+            var dur = lockDurationFor(l.attempts);
+            if (dur > 0) l.lockUntil = Date.now() + dur;
+            saveLock(l);
+            if (dur > 0) {
+              applyLockUI(dur);
+            } else {
+              btn.disabled = false;
+              err.textContent = 'Contraseña incorrecta';
+              input.value = '';
+              try { input.focus(); } catch (e) {}
+            }
           }
         }).catch(function (e) {
           btn.disabled = false;
@@ -231,10 +312,17 @@
         });
       }
 
+      // Al cargar el gate, si ya hay bloqueo activo desde antes, aplicarlo
+      (function checkInitialLock() {
+        var lock = getLock();
+        var rem = lock.lockUntil - Date.now();
+        if (rem > 0) applyLockUI(rem);
+      })();
+
       btn.addEventListener('click', tryAuth);
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') tryAuth(); });
       // Focus after a tick so iOS shows the keyboard
-      setTimeout(function () { try { input.focus(); } catch (e) {} }, 100);
+      setTimeout(function () { try { if (!input.disabled) input.focus(); } catch (e) {} }, 100);
     })();
   </script>
   <script>
