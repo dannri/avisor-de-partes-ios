@@ -113,20 +113,22 @@
       min-height: 0 !important;
     }
     /* ROOT FIX for "row 3137 stretch" on iPhone Safari:
-       Small-rowspan rotated cells (writing-mode vertical) are the sole driver
-       of the oversized row. Safari ignores max-height on vertical writing-mode
-       cells, so max-height: 40px does nothing — the rotated text "CARGAS
-       LATERALES" (~16 chars) demands 60-160px and the row follows.
-       In unifyTableGroups() we set data-wm-was-vertical="1" and force
-       writing-mode: horizontal-tb on those cells via inline style.
-       This CSS reinforces the override with !important so app.css cannot win. */
-    table td[data-wm-was-vertical="1"],
-    table th[data-wm-was-vertical="1"] {
-      writing-mode: horizontal-tb !important;
-      -webkit-writing-mode: horizontal-tb !important;
-      height: 40px !important;
-      max-height: 40px !important;
-      overflow: hidden !important;
+       WebKit table layout ignores max-height on <td> — this is a known,
+       documented limitation. The ONLY reliable fix is to ensure the cell
+       content naturally fits within rowspan*40px so the browser never
+       needs to grow the row.
+       For rotated label cells (writing-mode vertical) with rowspan <= 2,
+       unifyTableGroups() sets data-small-rs="1" and zeros font-size,
+       line-height and vertical padding. Content height becomes 0px so
+       Safari uses our advisory height:Npx — row stays exactly 40px.
+       Large-rowspan cells (the main "CARGAS LATERALES" label spanning
+       many rows) are left untouched and keep their rotated appearance. */
+    table td[data-small-rs="1"],
+    table th[data-small-rs="1"] {
+      font-size: 0px !important;
+      line-height: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
     }
     /* Safety net for the period BEFORE unifyTableGroups runs (or if it
        misses a cycle): any cell with rowspan=1 is forced to 40px max,
@@ -1771,38 +1773,33 @@
             var rs = parseInt(td.getAttribute('rowspan') || '1', 10);
             var wm = '';
             try { wm = window.getComputedStyle(td).writingMode || ''; } catch(e) {}
-            // isNowVertical: the cell still has vertical writing-mode in the DOM
-            // wasVertical:   we already overrode it in a previous tick (inline style
-            //                hides the original, so we track it via data attribute)
-            var isNowVertical = wm.indexOf('vertical') === 0;
-            var wasVertical   = td.dataset.wmWasVertical === '1';
-            var isRotated     = isNowVertical || wasVertical;
-            var isGroupCell   = isRotated || rs > 1;
+            var isRotated   = wm.indexOf('vertical') === 0;
+            var isGroupCell = isRotated || rs > 1;
             var clampPx = (rs * ROW_H) + 'px';
             if (isGroupCell) {
               if (td.dataset.groupCell !== '1') td.dataset.groupCell = '1';
               if (td.style.maxHeight !== clampPx) td.style.maxHeight = clampPx;
               if (td.style.height !== clampPx) td.style.height = clampPx;
-              // ROOT FIX — Safari iOS ignores max-height on cells with
-              // writing-mode: vertical-lr, so those cells can stretch the row
-              // to 60-160px regardless of what we set.  Forcing horizontal-tb
-              // means the cell's natural height is ~20px and our 40px clamp
-              // works correctly.  We only touch small-rowspan cells (rs <= 2)
-              // because the large "CARGAS LATERALES" label (rowspan=18) is not
-              // the culprit and we want to preserve its rotated appearance.
-              if (isNowVertical && rs <= 2) {
-                td.dataset.wmWasVertical = '1';
-                if (td.style.writingMode !== 'horizontal-tb') {
-                  td.style.writingMode = 'horizontal-tb';
-                  td.style.webkitWritingMode = 'horizontal-tb';
-                }
-              } else if (wasVertical && rs > 2) {
-                // Rowspan grew back above 2 — restore the rotated appearance
-                try { delete td.dataset.wmWasVertical; } catch(e) { td.removeAttribute('data-wm-was-vertical'); }
-                if (td.style.writingMode === 'horizontal-tb') {
-                  td.style.writingMode = '';
-                  td.style.webkitWritingMode = '';
-                }
+              // ROOT FIX — WebKit table layout ignores max-height on <td>.
+              // The ONLY reliable way to stop a rotated-text cell from
+              // stretching its row is to make the content height = 0.
+              // We do this for small-rowspan rotated cells (rs <= 2):
+              // font-size:0 + line-height:0 + padding top/bottom = 0 means
+              // the cell has nothing to render → height = our advisory 40px.
+              // Large-rowspan cells (rowspan >= 3) keep their rotated label.
+              if (isRotated && rs <= 2) {
+                if (td.dataset.smallRs !== '1') td.dataset.smallRs = '1';
+                if (td.style.fontSize   !== '0px') td.style.fontSize   = '0px';
+                if (td.style.lineHeight !== '0')   td.style.lineHeight = '0';
+                if (td.style.paddingTop    !== '0px') td.style.paddingTop    = '0px';
+                if (td.style.paddingBottom !== '0px') td.style.paddingBottom = '0px';
+              } else if (td.dataset.smallRs === '1') {
+                // Rowspan grew back — restore label visibility
+                try { delete td.dataset.smallRs; } catch(e) { td.removeAttribute('data-small-rs'); }
+                if (td.style.fontSize   === '0px') td.style.fontSize   = '';
+                if (td.style.lineHeight === '0')   td.style.lineHeight = '';
+                if (td.style.paddingTop    === '0px') td.style.paddingTop    = '';
+                if (td.style.paddingBottom === '0px') td.style.paddingBottom = '';
               }
             } else {
               // Regular cell — purge any leftover inline that React/our
