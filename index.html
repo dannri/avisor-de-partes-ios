@@ -1,0 +1,1710 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>AVISOR DE PARTES</title>
+
+  <!-- PWA / iPad -->
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AVISOR DE PARTES" />
+  <meta name="theme-color" content="#161040" />
+  <link rel="apple-touch-icon" href="./icon-180.png" />
+  <link rel="apple-touch-icon" sizes="152x152" href="./icon-180.png" />
+  <link rel="apple-touch-icon" sizes="167x167" href="./icon-180.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icon-180.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png" />
+
+  <style>
+    body { margin: 0; padding: 0; }
+    /* iPad PWA: respect safe areas (notch / home indicator) */
+    @supports (padding: env(safe-area-inset-top)) {
+      body {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+        background: #161040;
+      }
+    }
+    /* Prevent overscroll bounce on iPad Safari */
+    html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+    /* Block pinch-zoom on iPad Safari (iOS 26 ignores user-scalable=no) */
+    html, body { touch-action: pan-x pan-y; }
+
+    /* Sustituir el tinte azul claro de las filas de la tabla por gris claro.
+       El bundle de la app usa Tailwind: blue-50/100 para fondos pares/impares. */
+    table tr td.bg-blue-50,
+    table tr td.bg-blue-100,
+    table tr td[class*="bg-blue-50"],
+    table tr td[class*="bg-blue-100"] {
+      background-color: #f3f4f6 !important; /* gray-100 */
+    }
+    table tr td[style*="background-color: rgb(239, 246, 255)"],
+    table tr td[style*="background-color: rgb(219, 234, 254)"],
+    table tr td[style*="background: rgb(239, 246, 255)"],
+    table tr td[style*="background: rgb(219, 234, 254)"] {
+      background-color: #f3f4f6 !important;
+    }
+    table tr.bg-blue-50,
+    table tr.bg-blue-100,
+    table tr[class*="bg-blue-50"],
+    table tr[class*="bg-blue-100"] {
+      background-color: #f3f4f6 !important;
+    }
+
+    /* Force every table row to have a fixed height regardless of content/zoom.
+       The yellow gap on row 3137 happens because the app gives that row
+       height:auto and the flex container lets it stretch to fill space. */
+    table tr[data-uniform-row="1"] {
+      height: 40px !important;
+      max-height: 40px !important;
+      min-height: 40px !important;
+    }
+    table tr[data-uniform-row="1"] > td,
+    table tr[data-uniform-row="1"] > th {
+      height: 40px !important;
+      max-height: 40px !important;
+      min-height: 40px !important;
+      overflow: hidden !important;
+      vertical-align: middle !important;
+      box-sizing: border-box !important;
+    }
+    /* If the table is wrapped in a flex container that stretches it, neutralise it */
+    table[data-flat-table="1"] {
+      height: auto !important;
+      flex: 0 0 auto !important;
+    }
+    table[data-flat-table="1"] tbody {
+      height: auto !important;
+    }
+
+    /* Password gate (loads before the app) */
+    #__gate__ {
+      position: fixed; inset: 0;
+      background: linear-gradient(135deg, #161040 0%, #0d1035 45%, #07080f 100%);
+      z-index: 2147483647;
+      display: flex; align-items: center; justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    #__gate__ .card {
+      background: rgba(255,255,255,0.05);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 40px 32px;
+      width: 86%;
+      max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    #__gate__ h1 {
+      color: #fff; font-size: 16px; font-weight: 700;
+      margin: 0 0 24px; text-align: center; letter-spacing: 2px;
+    }
+    #__gate__ input {
+      width: 100%; box-sizing: border-box;
+      padding: 14px 16px; font-size: 17px;
+      background: rgba(255,255,255,0.08);
+      color: #fff; border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px; outline: none;
+      -webkit-appearance: none; appearance: none;
+      letter-spacing: 4px; text-align: center;
+    }
+    #__gate__ input::placeholder { letter-spacing: normal; color: rgba(255,255,255,0.4); }
+    #__gate__ input:focus { border-color: #5eadff; background: rgba(255,255,255,0.12); }
+    #__gate__ button {
+      width: 100%; margin-top: 14px; padding: 14px;
+      background: #3b82f6; color: #fff; border: none;
+      border-radius: 10px; font-size: 16px; font-weight: 600;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
+    #__gate__ button:disabled { opacity: 0.5; }
+    #__gate__ .err { color: #ff6b6b; font-size: 14px; text-align: center; min-height: 20px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Password gate -->
+  <div id="__gate__">
+    <div class="card">
+      <h1>AVISOR DE PARTES</h1>
+      <input type="password" id="__gate_pwd__" placeholder="Contraseña" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <button id="__gate_ok__">Entrar</button>
+      <div class="err" id="__gate_err__"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var HASH = '8a09fbac5bb13bf413f26b00ce426e59a8aeab7aa9e593dc31a58a958cc23fbc';
+      var SALT = 'avisor-partes-2026-iPad';
+      var ITERATIONS = 250000;
+      var STORAGE_KEY = '__avisor_auth_v2__';
+
+      function pbkdf2Hex(pwd) {
+        var enc = new TextEncoder();
+        return crypto.subtle.importKey(
+          'raw', enc.encode(pwd), { name: 'PBKDF2' }, false, ['deriveBits']
+        ).then(function (key) {
+          return crypto.subtle.deriveBits(
+            { name: 'PBKDF2', salt: enc.encode(SALT), iterations: ITERATIONS, hash: 'SHA-256' },
+            key, 256
+          );
+        }).then(function (bits) {
+          var arr = new Uint8Array(bits);
+          var hex = '';
+          for (var i = 0; i < arr.length; i++) {
+            hex += (arr[i] < 16 ? '0' : '') + arr[i].toString(16);
+          }
+          return hex;
+        });
+      }
+
+      function loadApp() {
+        var gate = document.getElementById('__gate__');
+        if (gate && gate.parentNode) gate.parentNode.removeChild(gate);
+        var css = document.createElement('link');
+        css.rel = 'stylesheet'; css.crossOrigin = ''; css.href = './assets/app.css';
+        document.head.appendChild(css);
+        var s = document.createElement('script');
+        s.type = 'module'; s.crossOrigin = ''; s.src = './assets/app.js';
+        document.head.appendChild(s);
+      }
+
+      // Already authenticated on this device?
+      try {
+        if (localStorage.getItem(STORAGE_KEY) === '1') {
+          loadApp();
+          return;
+        }
+      } catch (e) {}
+
+      var input = document.getElementById('__gate_pwd__');
+      var btn = document.getElementById('__gate_ok__');
+      var err = document.getElementById('__gate_err__');
+
+      function tryAuth() {
+        btn.disabled = true;
+        err.textContent = 'Comprobando...';
+        pbkdf2Hex(input.value).then(function (hex) {
+          if (hex === HASH) {
+            try { localStorage.setItem(STORAGE_KEY, '1'); } catch (e) {}
+            loadApp();
+          } else {
+            btn.disabled = false;
+            err.textContent = 'Contraseña incorrecta';
+            input.value = '';
+            input.focus();
+          }
+        }).catch(function (e) {
+          btn.disabled = false;
+          err.textContent = 'Error: ' + (e && e.message ? e.message : 'desconocido');
+        });
+      }
+
+      btn.addEventListener('click', tryAuth);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') tryAuth(); });
+      // Focus after a tick so iOS shows the keyboard
+      setTimeout(function () { try { input.focus(); } catch (e) {} }, 100);
+    })();
+  </script>
+  <script>
+    (function () {
+      function stripDiacritics(s) {
+        return s.normalize ? s.normalize('NFD').replace(/[̀-ͯ]/g, '') : s;
+      }
+
+      function findMenuBackButton() {
+        var els = document.querySelectorAll('button, [role="button"]');
+        for (var i = 0; i < els.length; i++) {
+          if (els[i].id === '__refresh-btn__') continue;
+          var raw = (els[i].textContent || '').trim();
+          if (raw.length === 0 || raw.length > 15) continue;
+          var clean = stripDiacritics(raw.toUpperCase()).replace(/[^A-Z]/g, '');
+          if (clean === 'MENU' || clean === 'XMENU') return els[i];
+        }
+        return null;
+      }
+
+      function getCurrentScreenLabel() {
+        var nodes = document.querySelectorAll('h1, h2, h3, span, div, p');
+        var best = null;
+        for (var i = 0; i < nodes.length; i++) {
+          var n = nodes[i];
+          if (n.children.length > 2) continue;
+          var rect = n.getBoundingClientRect();
+          if (rect.top < 0 || rect.top > 90) continue;
+          if (rect.width === 0) continue;
+          var t = (n.textContent || '').trim();
+          if (t.length < 4 || t.length > 60) continue;
+          if (/^[\d\s\/\-:.]+$/.test(t)) continue;
+          var up = stripDiacritics(t.toUpperCase());
+          if (up.indexOf('MEN') === 0 && t.length < 8) continue;
+          if (!best || t.length > best.length) best = t;
+        }
+        return best;
+      }
+
+      function tryRestoreNavigation() {
+        var label = sessionStorage.getItem('__restoreScreen__');
+        if (!label) return;
+        var keywords = stripDiacritics(label.toUpperCase()).split(/\s+/).filter(function (w) { return w.length >= 4; });
+        if (keywords.length === 0) { sessionStorage.removeItem('__restoreScreen__'); return; }
+
+        var attempts = 0;
+        var iv = setInterval(function () {
+          attempts++;
+          var cards = document.querySelectorAll('button, [role="button"]');
+          for (var i = 0; i < cards.length; i++) {
+            if (cards[i].id === '__refresh-btn__') continue;
+            var t = stripDiacritics((cards[i].textContent || '').toUpperCase());
+            if (t.length === 0 || t.length > 40) continue;
+            for (var k = 0; k < keywords.length; k++) {
+              var prefix = keywords[k].substring(0, 5);
+              if (prefix.length >= 4 && t.indexOf(prefix) !== -1) {
+                sessionStorage.removeItem('__restoreScreen__');
+                clearInterval(iv);
+                try { cards[i].click(); } catch (e) {}
+                return;
+              }
+            }
+          }
+          if (attempts >= 30) {
+            sessionStorage.removeItem('__restoreScreen__');
+            clearInterval(iv);
+          }
+        }, 200);
+      }
+
+      function injectRefreshButton() {
+        var menuBtn = findMenuBackButton();
+        var existing = document.getElementById('__refresh-btn__');
+
+        // Not on a sub-screen — remove any leftover refresh button
+        if (!menuBtn) {
+          if (existing && existing.parentElement) existing.parentElement.removeChild(existing);
+          return;
+        }
+
+        var mr = menuBtn.getBoundingClientRect();
+        var mrCenterY = mr.top + mr.height / 2;
+        var mrRight = mr.right;
+
+        // Validate existing button: must be vertically near MENU and to its right
+        if (existing) {
+          var er = existing.getBoundingClientRect();
+          var erCenterY = er.top + er.height / 2;
+          if (er.width === 0 || er.height === 0 ||
+              Math.abs(erCenterY - mrCenterY) > 25 ||
+              er.left < mrRight - 5) {
+            if (existing.parentElement) existing.parentElement.removeChild(existing);
+            existing = null;
+          } else {
+            return;
+          }
+        }
+
+        var all = document.querySelectorAll('button, [role="button"]');
+        var groupsArr = [];
+        var seenParents = [];
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i];
+          if (el.id === '__refresh-btn__') continue;
+          if (el === menuBtn) continue;
+          if (!el.querySelector('svg')) continue;
+          var txt = (el.textContent || '').replace(/\s/g, '');
+          if (txt.length > 2) continue;
+          var rect = el.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          var elCenterY = rect.top + rect.height / 2;
+          // Must be vertically aligned with MENU (same header row)
+          if (Math.abs(elCenterY - mrCenterY) > 25) continue;
+          // Must be to the right of MENU (where the icon cluster lives)
+          if (rect.left < mrRight - 5) continue;
+          var p = el.parentElement;
+          if (!p) continue;
+          var idx = seenParents.indexOf(p);
+          if (idx === -1) {
+            seenParents.push(p);
+            groupsArr.push({ parent: p, items: [{ el: el, left: rect.left, top: rect.top }] });
+          } else {
+            groupsArr[idx].items.push({ el: el, left: rect.left, top: rect.top });
+          }
+        }
+
+        var candidates = groupsArr.filter(function (g) { return g.items.length >= 2; });
+        if (candidates.length === 0) return;
+
+        candidates.sort(function (a, b) {
+          if (b.items.length !== a.items.length) return b.items.length - a.items.length;
+          return a.items[0].top - b.items[0].top;
+        });
+        var best = candidates[0];
+        best.items.sort(function (a, b) { return a.left - b.left; });
+        var template = best.items[0].el;
+        var parent = best.parent;
+
+        var btn = document.createElement('button');
+        btn.id = '__refresh-btn__';
+        btn.className = template.className;
+        btn.title = 'Actualizar datos';
+        btn.style.display = template.style.display || '';
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin:auto"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
+
+        function handleClick(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          if (btn.dataset.clicked === '1') return;
+          btn.dataset.clicked = '1';
+          btn.style.opacity = '0.5';
+          btn.style.pointerEvents = 'none';
+          var label = getCurrentScreenLabel();
+          if (label) sessionStorage.setItem('__restoreScreen__', label);
+          // small delay so the visual feedback shows
+          setTimeout(function () { window.location.reload(); }, 30);
+        }
+        btn.addEventListener('click', handleClick, true);
+        btn.addEventListener('touchend', handleClick, true);
+
+        parent.insertBefore(btn, template);
+      }
+
+      function injectPartesGlow() {
+        var buttons = document.querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+          var b = buttons[i];
+          if (b.dataset.glowFixed === '1') continue;
+          var txt = (b.textContent || '').toUpperCase();
+          if (txt.indexOf('PARTES') === -1 && txt.indexOf('INCIDENCIAS') === -1) continue;
+
+          b.dataset.glowFixed = '1';
+          b.style.boxShadow = '0 0 24px 4px rgba(245,158,11,0.5), 0 0 60px 2px rgba(245,158,11,0.15), inset 0 0 20px 0px rgba(245,158,11,0.1)';
+          b.style.position = b.style.position || 'relative';
+          b.style.overflow = 'hidden';
+          if (!b.classList.contains('card-hover-shine')) b.classList.add('card-hover-shine');
+          if (!b.querySelector('.__glow-shine__')) {
+            var shine = document.createElement('div');
+            shine.className = 'card-shine-sweep __glow-shine__';
+            b.appendChild(shine);
+          }
+        }
+      }
+
+      function replaceBgWithSVG() {
+        var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" preserveAspectRatio="xMidYMid slice">';
+        s += '<defs>';
+        s += '<linearGradient id="inj_bg" x1="0%" y1="0%" x2="100%" y2="100%">';
+        s += '<stop offset="0%" stop-color="#161040"/>';
+        s += '<stop offset="45%" stop-color="#0d1035"/>';
+        s += '<stop offset="100%" stop-color="#07080f"/>';
+        s += '</linearGradient>';
+        s += '<radialGradient id="inj_ambL" cx="300" cy="250" r="420" gradientUnits="userSpaceOnUse">';
+        s += '<stop offset="0%" stop-color="#2a1a70" stop-opacity="0.45"/>';
+        s += '<stop offset="100%" stop-color="#0d1035" stop-opacity="0"/>';
+        s += '</radialGradient>';
+        s += '<radialGradient id="inj_ambR" cx="980" cy="580" r="360" gradientUnits="userSpaceOnUse">';
+        s += '<stop offset="0%" stop-color="#1a1558" stop-opacity="0.35"/>';
+        s += '<stop offset="100%" stop-color="#07080f" stop-opacity="0"/>';
+        s += '</radialGradient>';
+        s += '<radialGradient id="inj_glowB" cx="50%" cy="50%" r="50%">';
+        s += '<stop offset="0%" stop-color="#5eadff" stop-opacity="0.95"/>';
+        s += '<stop offset="40%" stop-color="#3b82f6" stop-opacity="0.4"/>';
+        s += '<stop offset="100%" stop-color="#1e40af" stop-opacity="0"/>';
+        s += '</radialGradient>';
+        s += '<radialGradient id="inj_glowT" cx="50%" cy="50%" r="50%">';
+        s += '<stop offset="0%" stop-color="#5fffea" stop-opacity="0.95"/>';
+        s += '<stop offset="40%" stop-color="#14b8a6" stop-opacity="0.4"/>';
+        s += '<stop offset="100%" stop-color="#0d9488" stop-opacity="0"/>';
+        s += '</radialGradient>';
+        s += '<radialGradient id="inj_glowO" cx="50%" cy="50%" r="50%">';
+        s += '<stop offset="0%" stop-color="#ffb860" stop-opacity="0.95"/>';
+        s += '<stop offset="40%" stop-color="#f97316" stop-opacity="0.4"/>';
+        s += '<stop offset="100%" stop-color="#c2410c" stop-opacity="0"/>';
+        s += '</radialGradient>';
+        s += '<radialGradient id="inj_vign" cx="50%" cy="50%" r="72%" gradientUnits="objectBoundingBox">';
+        s += '<stop offset="55%" stop-color="transparent"/>';
+        s += '<stop offset="100%" stop-color="#000000" stop-opacity="0.6"/>';
+        s += '</radialGradient>';
+        s += '<filter id="inj_fBlur" x="-80%" y="-80%" width="260%" height="260%">';
+        s += '<feGaussianBlur stdDeviation="14"/>';
+        s += '</filter>';
+        s += '<filter id="inj_fSm" x="-40%" y="-40%" width="180%" height="180%">';
+        s += '<feGaussianBlur stdDeviation="3"/>';
+        s += '</filter>';
+        s += '</defs>';
+        s += '<rect width="1280" height="800" fill="url(#inj_bg)"/>';
+        s += '<rect width="1280" height="800" fill="url(#inj_ambL)"/>';
+        s += '<rect width="1280" height="800" fill="url(#inj_ambR)"/>';
+        s += '<g stroke="rgba(80,120,200,0.2)" stroke-width="1" fill="none">';
+        s += '<line x1="1266" y1="0" x2="1280" y2="8"/>';
+        s += '<line x1="1146" y1="0" x2="1280" y2="77"/>';
+        s += '<line x1="1027" y1="0" x2="1280" y2="146"/>';
+        s += '<line x1="908" y1="0" x2="1280" y2="215"/>';
+        s += '<line x1="788" y1="0" x2="1280" y2="284"/>';
+        s += '<line x1="669" y1="0" x2="1280" y2="353"/>';
+        s += '<line x1="549" y1="0" x2="1280" y2="422"/>';
+        s += '<line x1="430" y1="0" x2="1280" y2="491"/>';
+        s += '<line x1="310" y1="0" x2="1280" y2="560"/>';
+        s += '<line x1="190" y1="0" x2="1280" y2="629"/>';
+        s += '<line x1="71" y1="0" x2="1280" y2="698"/>';
+        s += '<line x1="0" y1="28" x2="1280" y2="767"/>';
+        s += '<line x1="0" y1="97" x2="1217" y2="800"/>';
+        s += '<line x1="0" y1="166" x2="1098" y2="800"/>';
+        s += '<line x1="0" y1="235" x2="979" y2="800"/>';
+        s += '<line x1="0" y1="304" x2="859" y2="800"/>';
+        s += '<line x1="0" y1="373" x2="740" y2="800"/>';
+        s += '<line x1="0" y1="442" x2="620" y2="800"/>';
+        s += '<line x1="0" y1="511" x2="501" y2="800"/>';
+        s += '<line x1="0" y1="580" x2="381" y2="800"/>';
+        s += '<line x1="0" y1="649" x2="261" y2="800"/>';
+        s += '<line x1="0" y1="718" x2="142" y2="800"/>';
+        s += '<line x1="0" y1="787" x2="22" y2="800"/>';
+        s += '<line x1="0" y1="69" x2="119" y2="0"/>';
+        s += '<line x1="0" y1="138" x2="239" y2="0"/>';
+        s += '<line x1="0" y1="207" x2="358" y2="0"/>';
+        s += '<line x1="0" y1="276" x2="478" y2="0"/>';
+        s += '<line x1="0" y1="345" x2="597" y2="0"/>';
+        s += '<line x1="0" y1="414" x2="717" y2="0"/>';
+        s += '<line x1="0" y1="483" x2="836" y2="0"/>';
+        s += '<line x1="0" y1="552" x2="956" y2="0"/>';
+        s += '<line x1="0" y1="621" x2="1075" y2="0"/>';
+        s += '<line x1="0" y1="690" x2="1195" y2="0"/>';
+        s += '<line x1="0" y1="759" x2="1280" y2="20"/>';
+        s += '<line x1="48" y1="800" x2="1280" y2="89"/>';
+        s += '<line x1="168" y1="800" x2="1280" y2="158"/>';
+        s += '<line x1="287" y1="800" x2="1280" y2="227"/>';
+        s += '<line x1="407" y1="800" x2="1280" y2="296"/>';
+        s += '<line x1="526" y1="800" x2="1280" y2="365"/>';
+        s += '<line x1="646" y1="800" x2="1280" y2="434"/>';
+        s += '<line x1="765" y1="800" x2="1280" y2="503"/>';
+        s += '<line x1="885" y1="800" x2="1280" y2="572"/>';
+        s += '<line x1="1004" y1="800" x2="1280" y2="641"/>';
+        s += '<line x1="1124" y1="800" x2="1280" y2="710"/>';
+        s += '<line x1="1244" y1="800" x2="1280" y2="779"/>';
+        s += '<line x1="80" y1="0" x2="80" y2="800"/>';
+        s += '<line x1="160" y1="0" x2="160" y2="800"/>';
+        s += '<line x1="240" y1="0" x2="240" y2="800"/>';
+        s += '<line x1="320" y1="0" x2="320" y2="800"/>';
+        s += '<line x1="400" y1="0" x2="400" y2="800"/>';
+        s += '<line x1="480" y1="0" x2="480" y2="800"/>';
+        s += '<line x1="560" y1="0" x2="560" y2="800"/>';
+        s += '<line x1="640" y1="0" x2="640" y2="800"/>';
+        s += '<line x1="720" y1="0" x2="720" y2="800"/>';
+        s += '<line x1="800" y1="0" x2="800" y2="800"/>';
+        s += '<line x1="880" y1="0" x2="880" y2="800"/>';
+        s += '<line x1="960" y1="0" x2="960" y2="800"/>';
+        s += '<line x1="1040" y1="0" x2="1040" y2="800"/>';
+        s += '<line x1="1120" y1="0" x2="1120" y2="800"/>';
+        s += '<line x1="1200" y1="0" x2="1200" y2="800"/>';
+        s += '</g>';
+        s += '<g filter="url(#inj_fBlur)" opacity="0.7">';
+        s += '<circle cx="160" cy="118" r="32" fill="url(#inj_glowB)"/>';
+        s += '<circle cx="640" cy="393" r="38" fill="url(#inj_glowT)"/>';
+        s += '<circle cx="1120" cy="600" r="30" fill="url(#inj_glowB)"/>';
+        s += '<circle cx="400" cy="256" r="30" fill="url(#inj_glowB)"/>';
+        s += '<circle cx="880" cy="531" r="30" fill="url(#inj_glowT)"/>';
+        s += '<circle cx="160" cy="49" r="24" fill="url(#inj_glowO)"/>';
+        s += '<circle cx="480" cy="235" r="28" fill="url(#inj_glowB)"/>';
+        s += '<circle cx="240" cy="166" r="26" fill="url(#inj_glowT)"/>';
+        s += '<circle cx="800" cy="428" r="32" fill="url(#inj_glowO)"/>';
+        s += '<circle cx="480" cy="304" r="26" fill="url(#inj_glowB)"/>';
+        s += '<circle cx="960" cy="240" r="28" fill="url(#inj_glowT)"/>';
+        s += '<circle cx="560" cy="520" r="34" fill="url(#inj_glowO)"/>';
+        s += '<circle cx="1120" cy="90" r="26" fill="url(#inj_glowB)"/>';
+        s += '<circle cx="320" cy="152" r="24" fill="url(#inj_glowT)"/>';
+        s += '<circle cx="800" cy="700" r="28" fill="url(#inj_glowO)"/>';
+        s += '<circle cx="720" cy="162" r="28" fill="url(#inj_glowB)"/>';
+        s += '<circle cx="1200" cy="480" r="24" fill="url(#inj_glowT)"/>';
+        s += '<circle cx="240" cy="700" r="26" fill="url(#inj_glowB)"/>';
+        s += '<circle cx="1040" cy="773" r="24" fill="url(#inj_glowT)"/>';
+        s += '<circle cx="40" cy="380" r="22" fill="url(#inj_glowO)"/>';
+        s += '</g>';
+        s += '<g filter="url(#inj_fSm)">';
+        s += '<circle cx="160" cy="118" r="7" fill="#a8d8ff" opacity="0.95"/>';
+        s += '<circle cx="640" cy="393" r="9" fill="#80ffe8" opacity="0.95"/>';
+        s += '<circle cx="1120" cy="600" r="7" fill="#a8d8ff" opacity="0.9"/>';
+        s += '<circle cx="400" cy="256" r="7" fill="#9ad0ff" opacity="0.9"/>';
+        s += '<circle cx="880" cy="531" r="7" fill="#80ffe8" opacity="0.9"/>';
+        s += '<circle cx="160" cy="49" r="6" fill="#ffc070" opacity="0.92"/>';
+        s += '<circle cx="480" cy="235" r="7" fill="#9ad0ff" opacity="0.9"/>';
+        s += '<circle cx="240" cy="166" r="6" fill="#80ffe8" opacity="0.9"/>';
+        s += '<circle cx="800" cy="428" r="8" fill="#ffc070" opacity="0.95"/>';
+        s += '<circle cx="480" cy="304" r="6" fill="#a8d8ff" opacity="0.9"/>';
+        s += '<circle cx="960" cy="240" r="7" fill="#80ffe8" opacity="0.9"/>';
+        s += '<circle cx="560" cy="520" r="9" fill="#ffc070" opacity="0.95"/>';
+        s += '<circle cx="1120" cy="90" r="6" fill="#a8d8ff" opacity="0.9"/>';
+        s += '<circle cx="320" cy="152" r="6" fill="#80ffe8" opacity="0.88"/>';
+        s += '<circle cx="800" cy="700" r="7" fill="#ffc070" opacity="0.9"/>';
+        s += '<circle cx="720" cy="162" r="7" fill="#a8d8ff" opacity="0.9"/>';
+        s += '<circle cx="1200" cy="480" r="6" fill="#80ffe8" opacity="0.88"/>';
+        s += '<circle cx="240" cy="700" r="6" fill="#a8d8ff" opacity="0.88"/>';
+        s += '<circle cx="1040" cy="773" r="6" fill="#80ffe8" opacity="0.88"/>';
+        s += '<circle cx="40" cy="380" r="5" fill="#ffc070" opacity="0.85"/>';
+        s += '</g>';
+        s += '<rect width="1280" height="800" fill="url(#inj_vign)"/>';
+        s += '</svg>';
+
+        var uri = 'url("data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s) + '")';
+        var all = document.querySelectorAll('*');
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i];
+          if (el.dataset && el.dataset.bgReplaced === '1') continue;
+          if (el.style && el.style.backgroundImage && el.style.backgroundImage.indexOf('fondo.jpg') !== -1) {
+            el.style.backgroundImage = uri;
+            el.style.backgroundSize = 'cover';
+            el.style.backgroundPosition = 'center';
+            if (el.dataset) el.dataset.bgReplaced = '1';
+          }
+        }
+      }
+
+      var __lastFitScreen = '';
+      var __lastFitHeight = 0;
+      var __fitPending = false;
+      function _triggerFit() {
+        if (__fitPending) return;
+        __fitPending = true;
+        setTimeout(function() {
+          __fitPending = false;
+          var eyeBtn = document.querySelector('button[title="Ajustar pantalla"]');
+          if (eyeBtn) { try { eyeBtn.click(); } catch(e) {} }
+        }, 300);
+      }
+      function autoFitEyeView() {
+        var label = getCurrentScreenLabel();
+        if (!label) { __lastFitScreen = ''; __lastFitHeight = 0; return; }
+        var up = stripDiacritics(label.toUpperCase());
+        var isTarget = up.indexOf('NOCHE') !== -1 ||
+                       up.indexOf('URBAN') !== -1 ||
+                       up.indexOf('TARDE') !== -1 ||
+                       up.indexOf('ESTADO') !== -1;
+        if (!isTarget) { __lastFitScreen = ''; __lastFitHeight = 0; return; }
+        var table = document.querySelector('table');
+        var h = table ? table.scrollHeight : 0;
+        var screenChanged = (__lastFitScreen !== label);
+        var sizeChanged = (h !== __lastFitHeight && __lastFitHeight > 0);
+        if (!screenChanged && !sizeChanged) return;
+        __lastFitScreen = label;
+        __lastFitHeight = h;
+        _triggerFit();
+      }
+
+      function fixTextoEditMode() {
+        var selects = document.querySelectorAll('select');
+        for (var i = 0; i < selects.length; i++) {
+          var sel = selects[i];
+          var hasTexto = false;
+          for (var j = 0; j < sel.options.length; j++) {
+            if (sel.options[j].value === '__TEXTO__') { hasTexto = true; break; }
+          }
+          if (!hasTexto) continue;
+          if (sel.value !== '') continue;
+          if (sel.dataset.textoFixed === '1') continue;
+          try {
+            var fiberKey = null;
+            var keys = Object.keys(sel);
+            for (var k = 0; k < keys.length; k++) {
+              if (keys[k].startsWith('__reactFiber$')) { fiberKey = keys[k]; break; }
+            }
+            if (!fiberKey) continue;
+            var node = sel[fiberKey];
+            var sdFiber = null;
+            for (var depth = 0; depth < 8; depth++) {
+              node = node.return;
+              if (!node) break;
+              if (typeof node.type !== 'function') continue;
+              var h0 = node.memoizedState;
+              var h1 = h0 && h0.next;
+              if (h0 && typeof h0.memoizedState === 'string' &&
+                  h1 && typeof h1.memoizedState === 'string' &&
+                  h0.memoizedState === '' && h1.memoizedState !== '') {
+                sdFiber = node;
+                break;
+              }
+            }
+            if (!sdFiber) continue;
+            var dispatch = sdFiber.memoizedState.queue && sdFiber.memoizedState.queue.dispatch;
+            if (!dispatch) continue;
+            sel.dataset.textoFixed = '1';
+            dispatch('__TEXTO__');
+          } catch(e) {}
+        }
+        var allSels = document.querySelectorAll('select[data-texto-fixed="1"]');
+        for (var m = 0; m < allSels.length; m++) {
+          if (allSels[m].value !== '') delete allSels[m].dataset.textoFixed;
+        }
+      }
+
+      // Acceso a fiber SOLO bajo demanda (en el click), nunca en loop.
+      function __lkOnClick(turno, pw) {
+        try {
+          var scrollContainer = document.querySelector('[data-scroll-container]');
+          if (!scrollContainer) return;
+          var fiberKey = null;
+          var keys = Object.keys(scrollContainer);
+          for (var k = 0; k < keys.length; k++) {
+            if (keys[k].indexOf('__reactFiber$') === 0) { fiberKey = keys[k]; break; }
+          }
+          if (!fiberKey) return;
+          var node = scrollContainer[fiberKey];
+          var zxFiber = null;
+          for (var depth = 0; depth < 20; depth++) {
+            node = node && node.return;
+            if (!node) break;
+            if (typeof node.type !== 'function') continue;
+            var h0 = node.memoizedState;
+            if (!h0) continue;
+            var h1 = h0.next, h2 = h1 && h1.next, h3 = h2 && h2.next;
+            if (h3 && h3.queue && typeof h3.queue.dispatch === 'function' &&
+                (h3.memoizedState === null || h3.memoizedState === 'NOCHE' ||
+                 h3.memoizedState === 'URBANIZACIONES' || h3.memoizedState === 'TARDE') &&
+                typeof h0.memoizedState === 'string' && h0.memoizedState.indexOf('-') !== -1) {
+              zxFiber = node;
+              break;
+            }
+          }
+          if (!zxFiber) return;
+          var dispatch = zxFiber.memoizedState.next.next.next.queue.dispatch;
+          var turnoActivo = zxFiber.memoizedState.next.next.next.memoizedState;
+
+          // Toggle: si ya está desbloqueado este turno, bloquear sin contraseña.
+          if (turnoActivo === turno) {
+            dispatch(null);
+            // Actualización optimista inmediata: poner todos los botones en rojo sin esperar a React
+            var allLkBtns = document.querySelectorAll('[data-lock-btn]');
+            for (var bi = 0; bi < allLkBtns.length; bi++) {
+              __lkStyleBtn(allLkBtns[bi], false);
+              allLkBtns[bi].dataset.state = 'closed';
+            }
+            setTimeout(__lkRefreshBtnStates, 300);
+            setTimeout(__lkRefreshBtnStates, 700);
+            return;
+          }
+
+          // Modal de contraseña.
+          var existing = document.getElementById('__lk_modal__');
+          if (existing) existing.parentNode.removeChild(existing);
+          var modal = document.createElement('div');
+          modal.id = '__lk_modal__';
+          modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+          modal.innerHTML =
+            '<div style="background:#fff;border-radius:16px;padding:28px;max-width:320px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3)">' +
+            '<h3 style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 8px;color:#1f2937">MODO EDICIÓN</h3>' +
+            '<p style="font-size:12px;color:#6b7280;text-align:center;font-weight:bold;text-transform:uppercase;margin:0 0 18px">INTRODUCE CLAVE DE ' + turno + '</p>' +
+            '<input id="__lk_inp__" type="password" placeholder="****" autocomplete="off" inputmode="numeric" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;font-size:20px;text-align:center;letter-spacing:0.5em;box-sizing:border-box;outline:none"/>' +
+            '<p id="__lk_err__" style="color:#ef4444;font-size:12px;text-align:center;font-weight:bold;visibility:hidden;margin:6px 0 0">CONTRASEÑA INCORRECTA</p>' +
+            '<div style="display:flex;gap:10px;margin-top:14px">' +
+            '<button id="__lk_cancel__" type="button" style="flex:1;background:#f3f4f6;border:none;border-radius:8px;padding:12px;font-weight:bold;cursor:pointer;font-size:14px">CANCELAR</button>' +
+            '<button id="__lk_ok__" type="button" style="flex:1;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:bold;cursor:pointer;font-size:14px">ACCEDER</button>' +
+            '</div></div>';
+          document.body.appendChild(modal);
+          var inp = document.getElementById('__lk_inp__');
+          var err = document.getElementById('__lk_err__');
+          setTimeout(function() { try { inp.focus(); } catch(e) {} }, 60);
+          function close() { try { document.body.removeChild(modal); } catch(e) {} }
+          function tryUnlock() {
+            if (inp.value === pw) {
+              try { dispatch(turno); } catch(e) {}
+              close();
+              setTimeout(__lkRefreshBtnStates, 80);
+              setTimeout(__lkRefreshBtnStates, 300);
+            } else {
+              err.style.visibility = 'visible';
+              inp.value = '';
+              inp.focus();
+            }
+          }
+          document.getElementById('__lk_ok__').onclick = tryUnlock;
+          document.getElementById('__lk_cancel__').onclick = close;
+          inp.onkeydown = function(ev) {
+            if (ev.key === 'Enter') tryUnlock();
+            else if (ev.key === 'Escape') close();
+          };
+        } catch(e) { /* silenciar para no romper la app */ }
+      }
+
+      // SVGs exactos del bundle (lucide-react): Lock + LockOpen
+      var __SVG_LOCK = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+      var __SVG_LOCK_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
+      // SVG papelera (lucide "trash-2")
+      var __SVG_TRASH = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>';
+
+      // Lee el turno activo desde el fiber, sin lanzar nunca.
+      function __lkReadTurnoActivo() {
+        try {
+          var sc = document.querySelector('[data-scroll-container]');
+          if (!sc) return null;
+          var fk = null;
+          var keys = Object.keys(sc);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
+          }
+          if (!fk) return null;
+          var node = sc[fk];
+          for (var depth = 0; depth < 20; depth++) {
+            node = node && node.return;
+            if (!node) break;
+            if (typeof node.type !== 'function') continue;
+            var h0 = node.memoizedState;
+            if (!h0) continue;
+            var h1 = h0.next, h2 = h1 && h1.next, h3 = h2 && h2.next;
+            if (h3 && h3.queue && typeof h3.queue.dispatch === 'function' &&
+                (h3.memoizedState === null || h3.memoizedState === 'NOCHE' ||
+                 h3.memoizedState === 'URBANIZACIONES' || h3.memoizedState === 'TARDE') &&
+                typeof h0.memoizedState === 'string' && h0.memoizedState.indexOf('-') !== -1) {
+              return h3.memoizedState;
+            }
+          }
+        } catch (e) {}
+        return null;
+      }
+
+      function __lkStyleBtn(btn, isUnlocked) {
+        if (isUnlocked) {
+          btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;margin-left:6px;padding:5px 12px;border-radius:9999px;border:2px solid #22c55e;background:#dcfce7;color:#15803d;cursor:pointer;vertical-align:middle;line-height:0;transition:all 0.15s;';
+          btn.innerHTML = __SVG_LOCK_OPEN;
+          btn.title = 'Bloquear (turno activo)';
+        } else {
+          btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;margin-left:6px;padding:5px 12px;border-radius:9999px;border:2px solid #ef4444;background:#fee2e2;color:#dc2626;cursor:pointer;vertical-align:middle;line-height:0;transition:all 0.15s;gap:2px;';
+          btn.innerHTML = __SVG_LOCK + '<span style="font-size:13px;font-weight:900;line-height:1">+</span>';
+          btn.title = 'Desbloquear edición';
+        }
+      }
+
+      // SVG de copia (lucide "copy")
+      var __SVG_COPY = '<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+
+      // Lee de cada <tr> los props del fiber Xx (vehiculoId, nDatos, uDatos, tDatos, onUpdateN/U/T)
+      function __lkReadRowFiber(tr) {
+        try {
+          var keys = Object.keys(tr);
+          var fk = null;
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
+          }
+          if (!fk) return null;
+          var node = tr[fk];
+          for (var depth = 0; depth < 12; depth++) {
+            if (!node) break;
+            var p = node.memoizedProps;
+            if (p && typeof p.vehiculoId !== 'undefined' &&
+                typeof p.onUpdateN === 'function' &&
+                typeof p.onUpdateU === 'function' &&
+                typeof p.onUpdateT === 'function') {
+              return p;
+            }
+            node = node.return;
+          }
+        } catch (e) {}
+        return null;
+      }
+
+      // Realiza la copia turnoFuente → turnoDestino en todas las filas visibles.
+      function __lkCopyTurno(fuente, destino) {
+        try {
+          // Verificar que el candado destino está abierto
+          var turnoActivo = __lkReadTurnoActivo();
+          if (turnoActivo !== destino) {
+            __lkShowAlert('Para copiar a ' + destino + ', primero desbloquea su candado.');
+            return false;
+          }
+
+          var trs = document.querySelectorAll('tbody tr');
+          var count = 0;
+          var fields = ['estado', 'cargaNo', 'cargaSiTipo', 'otros'];
+          var srcKey = fuente === 'NOCHE' ? 'nDatos' : 'uDatos';
+          var updKey = destino === 'URBANIZACIONES' ? 'onUpdateU' : 'onUpdateT';
+
+          for (var i = 0; i < trs.length; i++) {
+            var props = __lkReadRowFiber(trs[i]);
+            if (!props) continue;
+            var src = props[srcKey];
+            var update = props[updKey];
+            if (!src || typeof update !== 'function') continue;
+            for (var f = 0; f < fields.length; f++) {
+              var field = fields[f];
+              var val = src[field];
+              // Pasar todos los campos (incluso null/false/"") para sobreescribir el destino
+              if (typeof val === 'undefined') val = (field === 'cargaNo' ? false : (field === 'estado' ? null : ''));
+              try { update(props.vehiculoId, field, val); } catch (e) {}
+            }
+            count++;
+          }
+          return count;
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function __lkShowAlert(msg) {
+        var existing = document.getElementById('__lk_alert__');
+        if (existing) existing.parentNode.removeChild(existing);
+        var d = document.createElement('div');
+        d.id = '__lk_alert__';
+        d.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        d.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:24px;max-width:340px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3);text-align:center">' +
+          '<p style="margin:0 0 16px;font-size:14px;font-weight:bold;color:#1f2937">' + msg + '</p>' +
+          '<button id="__lk_alert_ok__" type="button" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-weight:bold;cursor:pointer;font-size:14px">OK</button>' +
+          '</div>';
+        document.body.appendChild(d);
+        document.getElementById('__lk_alert_ok__').onclick = function() {
+          try { document.body.removeChild(d); } catch (e) {}
+        };
+      }
+
+      function __lkShowCopyConfirm(fuente, destino) {
+        var existing = document.getElementById('__lk_copy_modal__');
+        if (existing) existing.parentNode.removeChild(existing);
+        var modal = document.createElement('div');
+        modal.id = '__lk_copy_modal__';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        modal.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:380px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3);text-align:center">' +
+          '<h3 style="font-size:18px;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 14px;color:#1f2937">COPIAR DATOS</h3>' +
+          '<p style="font-size:13px;color:#4b5563;margin:0 0 20px;line-height:1.4">¿Desea copiar la información del servicio<br/><b style="color:#1f2937">' + fuente + '</b> a <b style="color:#1f2937">' + destino + '</b>?</p>' +
+          '<div style="display:flex;gap:12px">' +
+          '<button id="__lk_copy_no__" type="button" style="flex:1;background:#fee2e2;border:2px solid #ef4444;color:#dc2626;border-radius:10px;padding:14px;font-weight:bold;cursor:pointer;font-size:18px">✕</button>' +
+          '<button id="__lk_copy_yes__" type="button" style="flex:1;background:#dcfce7;border:2px solid #22c55e;color:#15803d;border-radius:10px;padding:14px;font-weight:bold;cursor:pointer;font-size:18px">✓</button>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+        function close() { try { document.body.removeChild(modal); } catch (e) {} }
+        document.getElementById('__lk_copy_no__').onclick = close;
+        document.getElementById('__lk_copy_yes__').onclick = function() {
+          close();
+          var res = __lkCopyTurno(fuente, destino);
+          if (res === false) return; // Alerta ya mostrada
+          if (res === 0) __lkShowAlert('No se encontraron filas para copiar.');
+          else __lkShowAlert('Copiados ' + res + ' registros de ' + fuente + ' a ' + destino + '.');
+        };
+      }
+
+      function __lkStyleCopyBtn(btn) {
+        btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;margin-left:6px;padding:5px 12px;border-radius:9999px;border:2px solid #3b82f6;background:#dbeafe;color:#1d4ed8;cursor:pointer;vertical-align:middle;line-height:0;transition:all 0.15s;';
+        btn.innerHTML = __SVG_COPY;
+      }
+
+      function __lkStyleTrashBtn(btn) {
+        btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;margin-left:6px;padding:5px 12px;border-radius:9999px;border:2px solid #a855f7;background:#f3e8ff;color:#7e22ce;cursor:pointer;vertical-align:middle;line-height:0;transition:all 0.15s;';
+        btn.innerHTML = __SVG_TRASH;
+      }
+
+      // Vacía todos los registros del turno destino.
+      function __lkClearTurno(destino) {
+        try {
+          var turnoActivo = __lkReadTurnoActivo();
+          if (turnoActivo !== destino) {
+            __lkShowAlert('Para vaciar ' + destino + ', primero desbloquea su candado.');
+            return false;
+          }
+          var trs = document.querySelectorAll('tbody tr');
+          var count = 0;
+          var updKey = destino === 'NOCHE' ? 'onUpdateN' : (destino === 'URBANIZACIONES' ? 'onUpdateU' : 'onUpdateT');
+          var empty = { estado: null, cargaNo: false, cargaSiTipo: '', otros: '' };
+          for (var i = 0; i < trs.length; i++) {
+            var props = __lkReadRowFiber(trs[i]);
+            if (!props) continue;
+            var update = props[updKey];
+            if (typeof update !== 'function') continue;
+            for (var f in empty) {
+              try { update(props.vehiculoId, f, empty[f]); } catch (e) {}
+            }
+            count++;
+          }
+          return count;
+        } catch (e) { return false; }
+      }
+
+      function __lkShowClearConfirm(destino) {
+        var existing = document.getElementById('__lk_clear_modal__');
+        if (existing) existing.parentNode.removeChild(existing);
+        var pw = destino === 'NOCHE' ? '1020' : (destino === 'URBANIZACIONES' ? '1030' : '1040');
+        var modal = document.createElement('div');
+        modal.id = '__lk_clear_modal__';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        modal.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:400px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3);text-align:center">' +
+          '<h3 style="font-size:18px;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 14px;color:#b91c1c">VACIAR PLANTILLA</h3>' +
+          '<p style="font-size:13px;color:#4b5563;margin:0 0 20px;line-height:1.4">¿Desea borrar TODOS los registros de<br/><b style="color:#1f2937">' + destino + '</b>?<br/><span style="color:#dc2626;font-weight:bold">Esta acción no se puede deshacer.</span></p>' +
+          '<div style="display:flex;gap:12px">' +
+          '<button id="__lk_clear_no__" type="button" style="flex:1;background:#f3f4f6;border:2px solid #9ca3af;color:#4b5563;border-radius:10px;padding:14px;font-weight:bold;cursor:pointer;font-size:18px">✕</button>' +
+          '<button id="__lk_clear_yes__" type="button" style="flex:1;background:#fee2e2;border:2px solid #dc2626;color:#b91c1c;border-radius:10px;padding:14px;font-weight:bold;cursor:pointer;font-size:18px">✓</button>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+        function close() { try { document.body.removeChild(modal); } catch (e) {} }
+        document.getElementById('__lk_clear_no__').onclick = close;
+        document.getElementById('__lk_clear_yes__').onclick = function() {
+          close();
+          __lkShowClearPwPrompt(destino, pw);
+        };
+      }
+
+      function __lkShowClearPwPrompt(destino, pw) {
+        var existing = document.getElementById('__lk_clear_pw_modal__');
+        if (existing) existing.parentNode.removeChild(existing);
+        var modal = document.createElement('div');
+        modal.id = '__lk_clear_pw_modal__';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        modal.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:28px;max-width:340px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3)">' +
+          '<h3 style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px;color:#b91c1c">CONFIRMAR BORRADO</h3>' +
+          '<p style="font-size:12px;color:#6b7280;text-align:center;font-weight:bold;text-transform:uppercase;margin:0 0 18px">INTRODUCE CLAVE DE ' + destino + '</p>' +
+          '<input id="__lk_clear_inp__" type="password" placeholder="****" autocomplete="off" inputmode="numeric" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;font-size:20px;text-align:center;letter-spacing:0.5em;box-sizing:border-box;outline:none"/>' +
+          '<p id="__lk_clear_err__" style="color:#ef4444;font-size:12px;text-align:center;font-weight:bold;visibility:hidden;margin:6px 0 0">CONTRASEÑA INCORRECTA</p>' +
+          '<div style="display:flex;gap:10px;margin-top:14px">' +
+          '<button id="__lk_clear_cancel__" type="button" style="flex:1;background:#f3f4f6;border:none;border-radius:8px;padding:12px;font-weight:bold;cursor:pointer;font-size:14px">CANCELAR</button>' +
+          '<button id="__lk_clear_ok__" type="button" style="flex:1;background:#dc2626;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:bold;cursor:pointer;font-size:14px">VACIAR</button>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+        var inp = document.getElementById('__lk_clear_inp__');
+        var err = document.getElementById('__lk_clear_err__');
+        setTimeout(function() { try { inp.focus(); } catch (e) {} }, 60);
+        function close() { try { document.body.removeChild(modal); } catch (e) {} }
+        function tryClear() {
+          if (inp.value === pw) {
+            close();
+            var res = __lkClearTurno(destino);
+            if (res === false) return;
+            if (res === 0) __lkShowAlert('No se encontraron filas para vaciar.');
+            else __lkShowAlert('Vaciados ' + res + ' registros de ' + destino + '.');
+          } else {
+            err.style.visibility = 'visible';
+            inp.value = '';
+            inp.focus();
+          }
+        }
+        document.getElementById('__lk_clear_ok__').onclick = tryClear;
+        document.getElementById('__lk_clear_cancel__').onclick = close;
+        inp.onkeydown = function(ev) {
+          if (ev.key === 'Enter') tryClear();
+          else if (ev.key === 'Escape') close();
+        };
+      }
+
+      // Inyección DOM (sin fibers en loop): añade botones candado y actualiza su estado.
+      function injectEstadoLocks() {
+        var ths = document.querySelectorAll('th');
+        var found = { NOCHE: null, URBANIZACIONES: null, TARDE: null };
+        for (var i = 0; i < ths.length; i++) {
+          if (ths[i].colSpan < 5) continue;
+          var raw = (ths[i].textContent || '').trim().toUpperCase();
+          // Quitar texto extra del botón inyectado para comparar el nombre puro
+          var pure = raw.replace(/[^A-ZÁÉÍÓÚÜÑ]/g, '');
+          if (pure === 'NOCHE') found.NOCHE = ths[i];
+          else if (pure === 'URBANIZACIONES') found.URBANIZACIONES = ths[i];
+          else if (pure === 'TARDE') found.TARDE = ths[i];
+        }
+        if (!found.NOCHE || !found.URBANIZACIONES || !found.TARDE) return;
+
+        var PASSWORDS = { NOCHE: '1020', URBANIZACIONES: '1030', TARDE: '1040' };
+
+        // 1ª pasada: crear botones si faltan (sin tocar fiber)
+        var missingAny = false;
+        ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function(turno) {
+          var th = found[turno];
+          if (!th.querySelector('[data-lock-btn]')) {
+            missingAny = true;
+            var btn = document.createElement('button');
+            btn.setAttribute('data-lock-btn', turno);
+            btn.type = 'button';
+            __lkStyleBtn(btn, false);
+            btn.dataset.state = 'closed';
+            btn.onclick = function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              __lkOnClick(turno, PASSWORDS[turno]);
+              setTimeout(__lkRefreshBtnStates, 120);
+            };
+            th.appendChild(btn);
+          }
+
+          // Botón de copia solo en URB y TARDE
+          if (turno !== 'NOCHE' && !th.querySelector('[data-copy-btn]')) {
+            var cbtn = document.createElement('button');
+            cbtn.setAttribute('data-copy-btn', turno);
+            cbtn.type = 'button';
+            __lkStyleCopyBtn(cbtn);
+            var fuente = (turno === 'URBANIZACIONES') ? 'NOCHE' : 'URBANIZACIONES';
+            cbtn.title = 'Copiar datos de ' + fuente;
+            (function(f, d) {
+              cbtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                __lkShowCopyConfirm(f, d);
+              };
+            })(fuente, turno);
+            th.appendChild(cbtn);
+          }
+
+          // Botón papelera (vaciar) en los tres turnos
+          if (!th.querySelector('[data-trash-btn]')) {
+            var tbtn = document.createElement('button');
+            tbtn.setAttribute('data-trash-btn', turno);
+            tbtn.type = 'button';
+            __lkStyleTrashBtn(tbtn);
+            tbtn.title = 'Vaciar plantilla de ' + turno;
+            (function(d) {
+              tbtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                __lkShowClearConfirm(d);
+              };
+            })(turno);
+            th.appendChild(tbtn);
+          }
+        });
+
+        // Si acabamos de crear botones, leer fiber una vez para sincronizar
+        if (missingAny) __lkRefreshBtnStates();
+      }
+
+      function __lkRefreshBtnStates() {
+        try {
+          var turnoActivo = __lkReadTurnoActivo();
+          var btns = document.querySelectorAll('[data-lock-btn]');
+          for (var i = 0; i < btns.length; i++) {
+            var b = btns[i];
+            var turno = b.getAttribute('data-lock-btn');
+            var isUnlocked = (turnoActivo === turno);
+            var desired = isUnlocked ? 'open' : 'closed';
+            if (b.dataset.state !== desired) {
+              __lkStyleBtn(b, isUnlocked);
+              b.dataset.state = desired;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Lee el estado del candado SIN tocar fiber, mirando el data-state del botón
+      function __lkLeerEstadoCandadoDOM() {
+        var btn = document.querySelector('[data-lock-btn][data-state="open"]');
+        if (!btn) return null;
+        return btn.getAttribute('data-lock-btn');
+      }
+
+      // Lee datos puramente del DOM: cada <tr> tiene 1 columna nº + N columnas por turno.
+      // Por la estructura del bundle: vehículo | NOCHE(AV,DP,NO,SI/TIPO,OTROS) | nº | URB(...) | nº | TARDE(...)
+      // Pero en ESTADO COMPLETO hay nº repetido entre turnos. Para evitar errores,
+      // detectamos las columnas por los <th> de la primera fila de cabeceras.
+      var __cntCache = { ths: null, idx: null, lastTabla: null };
+
+      function __cntComputarIndices() {
+        // Estrategia: leer el thead y mapear el rango de columnas de cada turno.
+        // Luego, dentro de cada rango, identificar AV / SI-TIPO / OTROS por nombre
+        // de subcolumna en una fila inferior del thead (puede haber 2 ó 3 filas).
+        try {
+          var thead = document.querySelector('thead');
+          if (!thead) return null;
+          var headRows = thead.querySelectorAll('tr');
+          if (headRows.length < 2) return null;
+
+          // Fila 0 (de cabeceras agrupadas): NOCHE/URB/TARDE con colSpan>=5
+          var grupos = headRows[0].querySelectorAll('th');
+          var rangos = { NOCHE: null, URBANIZACIONES: null, TARDE: null };
+          var colCursor = 0;
+          for (var g = 0; g < grupos.length; g++) {
+            var txt = (grupos[g].textContent || '').replace(/[^A-ZÁÉÍÓÚÜÑ]/g, '').toUpperCase();
+            var span = grupos[g].colSpan || 1;
+            if (txt === 'NOCHE' || txt === 'URBANIZACIONES' || txt === 'TARDE') {
+              rangos[txt] = { start: colCursor, end: colCursor + span - 1 };
+            }
+            colCursor += span;
+          }
+          if (!rangos.NOCHE || !rangos.URBANIZACIONES || !rangos.TARDE) return null;
+
+          // Subcolumnas: recorremos TODAS las filas del thead salvo la 1ª y construimos
+          // un array de [columnaAbsoluta, textoSub] sumando colSpans correctamente
+          // por fila.
+          var subMap = {}; // colAbs -> nombre
+          for (var r = 1; r < headRows.length; r++) {
+            var ths2 = headRows[r].querySelectorAll('th');
+            // Para esta fila, los th no cubren las columnas 'huérfanas' de filas
+            // anteriores (rowSpan). Pero los th con texto que nos interesan
+            // (AV/DP/NO/SI/TIPO/OTROS) aparecen siempre en alguna fila aquí abajo,
+            // así que basta con asignarlos a la primera columna libre.
+            // Solución más simple: dentro de cada rango de turno, vamos a usar
+            // texto de los th que caigan dentro de ese rango, en el orden en que
+            // aparecen. Como cada turno tiene EXACTAMENTE: AV, DP, NO, SÍ/TIPO, OTROS
+            // (5 sub-columnas), basta con encontrar los 5 th dentro del rango.
+          }
+
+          // Estrategia más directa: para cada turno, dentro de su rango [start..end],
+          // los 5 índices de columna serán los offsets start..start+4.
+          // El orden de las sub-columnas en la app es FIJO: AV, DP, NO, SÍ/TIPO, OTROS.
+          // Lo verificamos comprobando que la 2ª fila del thead, dentro del rango del
+          // turno, contiene un th cuyo texto incluye "AV" en la posición start.
+          var indices = {};
+          ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function(turno) {
+            var r0 = rangos[turno];
+            indices[turno] = {
+              av:     r0.start,
+              dp:     r0.start + 1,
+              no:     r0.start + 2,
+              siTipo: r0.start + 3,
+              otros:  r0.start + 4
+            };
+          });
+          return indices;
+        } catch (e) { return null; }
+      }
+
+      function __cntCellText(tr, idx) {
+        var tds = tr.children;
+        if (!tds || idx >= tds.length) return '';
+        var td = tds[idx];
+        return (td.textContent || '').trim();
+      }
+
+      function __cntEsRojoFuerte(bg) {
+        if (!bg) return false;
+        var m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!m) return false;
+        var r = +m[1], gg = +m[2], b = +m[3];
+        // Rojo fuerte: rojo alto, verde+azul bajos. Excluye red-100 (254,226,226).
+        if (r >= 200 && gg <= 110 && b <= 110 && (r - gg) > 100 && (r - b) > 100) return true;
+        return false;
+      }
+
+      function __cntEsAveriadoDOM(tr) {
+        // El vehículo averiado tiene fondo rojo en alguna de las primeras 3 celdas
+        // (puede haber <th> lateral "CARGAS LATERALES" antes del nº vehículo).
+        // Limitamos la búsqueda a las primeras celdas para no confundir con
+        // celdas BASURA/CARTÓN del propio turno.
+        try {
+          var tds = tr.children;
+          if (!tds || tds.length === 0) return false;
+          // Buscar la celda "Nº vehículo" — es la 1ª <td> cuyo texto sea numérico (4 dígitos)
+          var celdaVeh = null;
+          for (var i = 0; i < Math.min(tds.length, 4); i++) {
+            var raw = (tds[i].textContent || '').trim();
+            // Quitar dígitos y comprobar si era 4 dígitos puros
+            if (/^\d{4}$/.test(raw)) { celdaVeh = tds[i]; break; }
+            // Si la celda contiene una cadena que empieza con 4 dígitos también vale
+            if (/^\d{4}/.test(raw) && raw.length < 12) { celdaVeh = tds[i]; break; }
+          }
+          if (!celdaVeh) celdaVeh = tds[0]; // fallback
+
+          // 1) Fondo computado de la celda del vehículo
+          var cs = window.getComputedStyle(celdaVeh);
+          if (__cntEsRojoFuerte(cs.backgroundColor || '')) return true;
+
+          // 2) Fondo computado de cualquier hijo de la celda del vehículo
+          var kids = celdaVeh.querySelectorAll('*');
+          for (var k = 0; k < kids.length; k++) {
+            var kcs = window.getComputedStyle(kids[k]);
+            if (__cntEsRojoFuerte(kcs.backgroundColor || '')) return true;
+          }
+
+          // 3) Clase CSS que indique rojo (por si el bundle usa Tailwind con valores no estándar)
+          var allHere = [celdaVeh].concat(Array.prototype.slice.call(kids));
+          for (var kk = 0; kk < allHere.length; kk++) {
+            var cn = (allHere[kk].className || '');
+            if (typeof cn === 'string' && (cn.indexOf('bg-red-5') !== -1 ||
+                cn.indexOf('bg-red-6') !== -1 || cn.indexOf('bg-red-7') !== -1)) {
+              return true;
+            }
+          }
+
+          // 4) Color del texto del nº vehículo: el bundle pinta el nº en color rojo/blanco
+          //    cuando está averiado. Si el texto tiene color rojo intenso (rgb(255,255,255)
+          //    sobre fondo rojo, o color: white sobre fondo rojo). Verificamos color.
+          var csTxt = window.getComputedStyle(celdaVeh);
+          var col = csTxt.color || '';
+          // Si el color del texto es blanco y el fondo es oscuro (gradiente que perdimos),
+          // intentemos detectar averiado por contraste: muchas apps ponen texto blanco sobre
+          // fondo rojo. Pero podría ser una celda CARTÓN también. Limitamos al caso de que
+          // background-image contenga "linear-gradient" rojo, común en Tailwind.
+          var bgImg = csTxt.backgroundImage || '';
+          if (bgImg && bgImg.indexOf('gradient') !== -1) {
+            // Buscar tonos rojos en el gradient
+            var matches = bgImg.match(/rgba?\([^)]+\)/g);
+            if (matches) {
+              for (var mi = 0; mi < matches.length; mi++) {
+                if (__cntEsRojoFuerte(matches[mi])) return true;
+              }
+            }
+          }
+        } catch (e) {}
+        return false;
+      }
+
+      // Bandera para que el MutationObserver no se autodispare al inyectar contadores
+      var __cntMutating = false;
+
+      function injectContadores() {
+        // El contador es SIEMPRE visible cuando estamos en ESTADO COMPLETO,
+        // tanto si está bloqueado como editando.
+
+        // Limpiar cualquier overlay rojo residual de versiones anteriores
+        var overlaysViejos = document.querySelectorAll('td[data-cnt-aver-overlay="1"]');
+        if (overlaysViejos.length > 0) {
+          __cntMutating = true;
+          for (var ovi = 0; ovi < overlaysViejos.length; ovi++) {
+            var tdRes = overlaysViejos[ovi];
+            tdRes.style.boxShadow = tdRes.dataset.cntAverPrevShadow || '';
+            delete tdRes.dataset.cntAverPrevShadow;
+            delete tdRes.dataset.cntAverOverlay;
+          }
+          setTimeout(function(){ __cntMutating = false; }, 50);
+        }
+
+        // Encontrar la tabla principal y validar que estamos en ESTADO COMPLETO
+        // (los <th> con colSpan>=5 que dicen NOCHE/URB/TARDE)
+        var ths = document.querySelectorAll('th');
+        var secciones = { NOCHE: null, URBANIZACIONES: null, TARDE: null };
+        for (var i = 0; i < ths.length; i++) {
+          if (ths[i].colSpan < 5) continue;
+          var raw = (ths[i].textContent || '').replace(/[^A-ZÁÉÍÓÚÜÑ]/g, '').toUpperCase();
+          if (raw === 'NOCHE') secciones.NOCHE = ths[i];
+          else if (raw === 'URBANIZACIONES') secciones.URBANIZACIONES = ths[i];
+          else if (raw === 'TARDE') secciones.TARDE = ths[i];
+        }
+        if (!secciones.NOCHE || !secciones.URBANIZACIONES || !secciones.TARDE) {
+          // Si no estamos en ESTADO COMPLETO, retirar contenedores huérfanos y limpiar overlays
+          var huerfanos = document.querySelectorAll('[id^="__cnt_"]');
+          var overlays = document.querySelectorAll('td[data-cnt-aver-overlay="1"]');
+          if (huerfanos.length > 0 || overlays.length > 0) {
+            __cntMutating = true;
+            for (var h = 0; h < huerfanos.length; h++) huerfanos[h].remove();
+            for (var ov = 0; ov < overlays.length; ov++) {
+              var tdO = overlays[ov];
+              tdO.style.boxShadow = tdO.dataset.cntAverPrevShadow || '';
+              delete tdO.dataset.cntAverPrevShadow;
+              delete tdO.dataset.cntAverOverlay;
+            }
+            setTimeout(function(){ __cntMutating = false; }, 50);
+          }
+          return;
+        }
+
+        // Buscar la <table> principal
+        var th0 = secciones.NOCHE;
+        var tabla = th0;
+        while (tabla && tabla.tagName !== 'TABLE') tabla = tabla.parentNode;
+        if (!tabla) return;
+
+        // --- Computar rangos horizontales (x1..x2) de cada turno usando las cabeceras ---
+        var rangos = {};
+        ['NOCHE','URBANIZACIONES','TARDE'].forEach(function(t) {
+          var th = secciones[t];
+          var r = th.getBoundingClientRect();
+          rangos[t] = { left: r.left, right: r.right };
+        });
+
+        function turnoDeX(cx) {
+          if (cx >= rangos.NOCHE.left && cx <= rangos.NOCHE.right) return 'NOCHE';
+          if (cx >= rangos.URBANIZACIONES.left && cx <= rangos.URBANIZACIONES.right) return 'URBANIZACIONES';
+          if (cx >= rangos.TARDE.left && cx <= rangos.TARDE.right) return 'TARDE';
+          return null;
+        }
+
+        // Recorrer filas: cada <td> que CONTENGA "LLENO" = +1 camión en ese turno
+        var trs = tabla.querySelectorAll('tbody tr');
+        var datos = {
+          NOCHE:          { disp: {}, aver: {} },
+          URBANIZACIONES: { disp: {}, aver: {} },
+          TARDE:          { disp: {}, aver: {} }
+        };
+
+        // Lee el contenido "real" de una celda: si tiene un <select> coge SOLO el
+        // valor seleccionado (si está en placeholder devuelve ''). Si tiene <input>,
+        // su value. Si tiene contenido mixto, clona y elimina <select>/<option> para
+        // evitar leer la lista de opciones completa.
+        function readCellText(td) {
+          try {
+            var sel = td.querySelector('select');
+            if (sel) {
+              var v = (sel.value || '').trim();
+              // Placeholder: el bundle usa value '' para "sin elegir"
+              if (!v) return '';
+              // Devolver el texto de la opción seleccionada (más amigable que el value)
+              if (sel.selectedIndex > 0 && sel.options[sel.selectedIndex]) {
+                return (sel.options[sel.selectedIndex].textContent || v).trim();
+              }
+              return v;
+            }
+            var inp = td.querySelector('input, textarea');
+            if (inp) {
+              return (inp.value || '').trim();
+            }
+            // Si la celda contiene <option> sueltas (datalist u otros), clonamos
+            // y las eliminamos antes de leer textContent.
+            if (td.querySelector('option, datalist')) {
+              var clone = td.cloneNode(true);
+              var del = clone.querySelectorAll('option, datalist');
+              for (var di = 0; di < del.length; di++) del[di].remove();
+              return (clone.textContent || '').trim();
+            }
+            return (td.textContent || '').trim();
+          } catch (e) {
+            return (td.textContent || '').trim();
+          }
+        }
+
+        // Valores que NUNCA son un tipo de residuo (texto de la columna NO/OTROS o estado)
+        var TIPOS_INVALIDOS = ['SIN CARGA', 'TEXTO', 'LLENO', 'LLENO CON ANOTACIONES',
+          'D', 'X', 'A', 'AV', 'DP', 'NO', 'SÍ', 'SI', 'SÍ/TIPO', 'SI/TIPO', 'OTROS'];
+
+        function esTipoValido(s) {
+          if (!s) return false;
+          if (s.length > 20) return false; // textos largos = descripción de OTROS, no tipo
+          // Texto que contiene LLENO o anotaciones largas
+          if (s.indexOf('LLENO') !== -1) return false;
+          if (s.indexOf('RUTA') === 0 || s.indexOf('TRAS') === 0) return false;
+          if (s.indexOf('AVERIADO') !== -1) return false;
+          if (s.indexOf('Nº') === 0 || s.indexOf('N°') === 0) return false; // "NºCONTENEDORES"
+          // Reglas de valor explícito
+          for (var i = 0; i < TIPOS_INVALIDOS.length; i++) {
+            if (s === TIPOS_INVALIDOS[i]) return false;
+          }
+          return true;
+        }
+
+        for (var j = 0; j < trs.length; j++) {
+          var tr = trs[j];
+          var tds = tr.children;
+          if (!tds || tds.length === 0) continue;
+          var esAverFila = __cntEsAveriadoDOM(tr);
+
+          // Cachear las celdas del tr clasificadas por turno (por centro X)
+          var celdasPorTurno = { NOCHE: [], URBANIZACIONES: [], TARDE: [] };
+          for (var c = 0; c < tds.length; c++) {
+            var rect = tds[c].getBoundingClientRect();
+            if (rect.width === 0) continue;
+            var cx = rect.left + rect.width / 2;
+            var t = turnoDeX(cx);
+            if (t) celdasPorTurno[t].push({ idx: c, td: tds[c], cx: cx });
+          }
+
+          // Para cada turno: buscar celdas con LLENO y, para cada match, su tipo
+          ['NOCHE','URBANIZACIONES','TARDE'].forEach(function(turno) {
+            var celdas = celdasPorTurno[turno];
+            if (celdas.length === 0) return;
+
+            // Detectar 'A' en cualquier celda del turno → averiado
+            var avA = false;
+            for (var k = 0; k < celdas.length; k++) {
+              var tt = readCellText(celdas[k].td).toUpperCase();
+              if (tt === 'A') { avA = true; break; }
+            }
+            var esAverTurno = esAverFila || avA;
+
+            // Buscar cada celda con LLENO
+            for (var m = 0; m < celdas.length; m++) {
+              var celda = celdas[m];
+              var txt = readCellText(celda.td).toUpperCase();
+              if (txt.indexOf('LLENO') === -1) continue;
+
+              // Tipo: ir hacia atrás en celdas del mismo turno hasta encontrar un tipo válido
+              var tipo = '';
+              var tipoColor = '';
+              for (var p = m - 1; p >= 0; p--) {
+                var prevTd = celdas[p].td;
+                var prevTxt = readCellText(prevTd).toUpperCase();
+                if (esTipoValido(prevTxt)) {
+                  tipo = prevTxt;
+                  // Capturar el fondo coloreado de esta celda (BASURA=amarillo, CARTÓN=cyan, ENVASES=verde lima…)
+                  try {
+                    var inner = prevTd.querySelector('[style*="background"]') || prevTd;
+                    var cs = window.getComputedStyle(inner);
+                    tipoColor = cs.backgroundColor || '';
+                    // Si la celda raíz es transparente, intentar con el primer hijo coloreado
+                    if (!tipoColor || tipoColor.indexOf('rgba(0, 0, 0, 0)') === 0 || tipoColor === 'transparent') {
+                      var kids = prevTd.querySelectorAll('*');
+                      for (var kk = 0; kk < kids.length; kk++) {
+                        var ccs = window.getComputedStyle(kids[kk]);
+                        var cbg = ccs.backgroundColor || '';
+                        if (cbg && cbg.indexOf('rgba(0, 0, 0, 0)') !== 0 && cbg !== 'transparent') {
+                          tipoColor = cbg;
+                          break;
+                        }
+                      }
+                    }
+                  } catch (eC) { tipoColor = ''; }
+                  break;
+                }
+              }
+              if (!tipo) tipo = 'SIN TIPO';
+
+              var bucket = esAverTurno ? datos[turno].aver : datos[turno].disp;
+              if (!bucket[tipo]) bucket[tipo] = { count: 0, color: tipoColor };
+              bucket[tipo].count += 1;
+              // Si una incidencia posterior tuvo color y la primera no, guardarlo
+              if (!bucket[tipo].color && tipoColor) bucket[tipo].color = tipoColor;
+            }
+          });
+        }
+
+        // Renderizar un único bloque debajo de la tabla, con 3 columnas
+        var containerId = '__cnt_main__';
+        var existing = document.getElementById(containerId);
+
+        function bloqueTurno(turno) {
+          var d = datos[turno];
+          var dispKeys = Object.keys(d.disp).sort();
+          var averKeys = Object.keys(d.aver).sort();
+          // Convierte rgb(r,g,b) o rgba(r,g,b,a) → rgba(r,g,b, 0.5). Si no hay color, fallback.
+          function toAlpha30(c, fallback) {
+            if (!c) return fallback;
+            var mm = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!mm) return fallback;
+            return 'rgba(' + mm[1] + ',' + mm[2] + ',' + mm[3] + ',0.5)';
+          }
+          // Devuelve color de texto más oscuro coherente con el color base (para legibilidad).
+          function toTextColor(c, fallback) {
+            if (!c) return fallback;
+            var mm = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!mm) return fallback;
+            // Multiplicar por 0.55 para oscurecer, así contrasta sobre fondo 30%
+            var r = Math.round(+mm[1] * 0.55);
+            var g = Math.round(+mm[2] * 0.55);
+            var b = Math.round(+mm[3] * 0.55);
+            return 'rgb(' + r + ',' + g + ',' + b + ')';
+          }
+
+          var html = '<div style="flex:1;min-width:140px;padding:8px 10px;">';
+          html += '<div style="font-size:11px;font-weight:800;text-align:center;color:#374151;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;border-bottom:2px solid #e5e7eb;padding-bottom:4px;">' + turno + '</div>';
+          if (dispKeys.length === 0 && averKeys.length === 0) {
+            // Sin LLENOs en este turno: dejar en blanco
+          } else {
+            if (dispKeys.length > 0) {
+              html += '<div style="font-size:10px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">Disponibles</div>';
+              for (var i = 0; i < dispKeys.length; i++) {
+                var k = dispKeys[i];
+                var info = d.disp[k];
+                var bg = toAlpha30(info.color, '#f0fdf4');
+                var txtC = toTextColor(info.color, '#166534');
+                var numC = toTextColor(info.color, '#16a34a');
+                html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;padding:2px 6px;background:' + bg + ';border-radius:6px;">';
+                html += '<span style="font-size:16px;font-weight:900;color:' + numC + ';min-width:20px;text-align:right;">' + info.count + '</span>';
+                html += '<span style="font-size:10px;color:' + txtC + ';font-weight:600;">' + k + '</span>';
+                html += '</div>';
+              }
+            }
+            if (averKeys.length > 0) {
+              html += '<div style="margin-top:6px;font-size:10px;font-weight:700;color:#b91c1c;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">&#9888; Averiados</div>';
+              for (var a = 0; a < averKeys.length; a++) {
+                var ka = averKeys[a];
+                var infoA = d.aver[ka];
+                var bgA = toAlpha30(infoA.color, '#fef2f2');
+                var txtA = toTextColor(infoA.color, '#991b1b');
+                var numA = toTextColor(infoA.color, '#dc2626');
+                html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;padding:2px 6px;background:' + bgA + ';border-radius:6px;border-left:3px solid #dc2626;">';
+                html += '<span style="font-size:16px;font-weight:900;color:' + numA + ';min-width:20px;text-align:right;">' + infoA.count + '</span>';
+                html += '<span style="font-size:10px;color:' + txtA + ';font-weight:600;">' + ka + '</span>';
+                html += '</div>';
+              }
+            }
+          }
+          html += '</div>';
+          return html;
+        }
+
+        var fullHtml = '';
+        fullHtml += '<div style="font-size:12px;font-weight:700;text-align:center;color:#374151;text-transform:uppercase;letter-spacing:0.1em;padding:6px 0;background:#f9fafb;border-bottom:1px solid #e5e7eb;border-top-left-radius:10px;border-top-right-radius:10px;">&#9660; Camiones pendientes de descarga</div>';
+        fullHtml += '<div style="display:flex;gap:8px;">';
+        fullHtml += bloqueTurno('NOCHE');
+        fullHtml += bloqueTurno('URBANIZACIONES');
+        fullHtml += bloqueTurno('TARDE');
+        fullHtml += '</div>';
+
+        // Comparar con el contenido actual para no escribir si no cambia (evita loop con observer)
+        try {
+          if (existing && existing.dataset.html === fullHtml) {
+            if (existing.style.display === 'none') existing.style.display = '';
+          } else if (!existing) {
+            var div = document.createElement('div');
+            div.id = containerId;
+            div.style.cssText = 'margin:8px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.08);overflow:hidden;';
+            div.innerHTML = fullHtml;
+            div.dataset.html = fullHtml;
+            tabla.parentNode.insertBefore(div, tabla.nextSibling);
+          } else {
+            existing.innerHTML = fullHtml;
+            existing.dataset.html = fullHtml;
+            existing.style.display = '';
+          }
+        } finally {
+          // Liberamos el guard que protege también la pintura de overlays sobre las celdas
+          setTimeout(function(){ __cntMutating = false; }, 50);
+        }
+      }
+
+      // Sustituye el tinte azul claro de filas de la tabla por gris claro y suaviza
+      // el chip azul medio de "SIN CARGA" bajando su opacidad a la mitad.
+      function tintarFilasGris() {
+        try {
+          var GRAY = '#f3f4f6'; // gray-100
+          // Filas <tr>/<td> azul muy claro → gris
+          var celdas = document.querySelectorAll('table tr, table td');
+          for (var i = 0; i < celdas.length; i++) {
+            var n = celdas[i];
+            if (n.dataset && n.dataset.cntGray === '1') continue;
+            var cs = window.getComputedStyle(n);
+            var bg = cs.backgroundColor || '';
+            var m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!m) continue;
+            var r = +m[1], g = +m[2], b = +m[3];
+            // Tonos blue-50/100 de Tailwind: R bajo-medio, G medio-alto, B alto, y B > R
+            var esAzulClaro = (b >= 245 && r >= 200 && r <= 245 && g >= 225 && g <= 250 && (b - r) >= 8 && (b - g) >= 0);
+            if (esAzulClaro) {
+              n.style.backgroundColor = GRAY;
+              if (n.dataset) n.dataset.cntGray = '1';
+            }
+          }
+          // Chip "SIN CARGA": SOLO el elemento cuyo texto exacto sea "SIN CARGA".
+          // No tocamos otros chips de color para no afectar a CARTÓN, LLENO, BASURA, etc.
+          var hijos = document.querySelectorAll('table td div, table td span');
+          for (var j = 0; j < hijos.length; j++) {
+            var h = hijos[j];
+            if (h.dataset && h.dataset.cntChipSoft === '1') continue;
+            // Filtrar por texto exacto del elemento: solo "SIN CARGA"
+            var txt = (h.textContent || '').trim().toUpperCase();
+            if (txt !== 'SIN CARGA') continue;
+            var hcs = window.getComputedStyle(h);
+            var hbg = hcs.backgroundColor || '';
+            var hm = hbg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!hm) continue;
+            var hr = +hm[1], hg = +hm[2], hb = +hm[3];
+            // Solo si el fondo es un azul (B > R y B alto); evita reaplicar si ya está suavizado
+            if (hb > hr && hb >= 200) {
+              h.style.backgroundColor = 'rgba(' + hr + ',' + hg + ',' + hb + ',0.35)';
+              if (h.dataset) h.dataset.cntChipSoft = '1';
+            }
+          }
+        } catch (e) {}
+      }
+
+      function unifyTableGroups() {
+        // Mark every table and row so our CSS can force uniform 40px height.
+        // Also strip any inline height/min-height that React/the bundle sets
+        // (this is what lets row 3137 stretch into the yellow gap).
+        var tables = document.querySelectorAll('table');
+        for (var t = 0; t < tables.length; t++) {
+          if (tables[t].dataset.flatTable !== '1') tables[t].dataset.flatTable = '1';
+          // Neutralise any parent that forces the table to stretch with flex/height
+          var p = tables[t].parentElement;
+          for (var depth = 0; depth < 3 && p; depth++) {
+            if (p.style && (p.style.flex || p.style.height || p.style.minHeight)) {
+              p.style.flex = '0 0 auto';
+              p.style.height = 'auto';
+              p.style.minHeight = '0';
+            }
+            p = p.parentElement;
+          }
+        }
+        var rows = document.querySelectorAll('table tr');
+        for (var r = 0; r < rows.length; r++) {
+          var row = rows[r];
+          if (row.dataset.uniformRow !== '1') row.dataset.uniformRow = '1';
+          // Remove inline height attribute and style if present
+          if (row.hasAttribute('height')) row.removeAttribute('height');
+          if (row.style.height) row.style.height = '';
+          if (row.style.minHeight) row.style.minHeight = '';
+          // Same for the cells
+          var tds = row.children;
+          for (var k = 0; k < tds.length; k++) {
+            var td = tds[k];
+            if (td.hasAttribute('height')) td.removeAttribute('height');
+            if (td.style.height) td.style.height = '';
+            if (td.style.minHeight) td.style.minHeight = '';
+          }
+        }
+      }
+
+      // --- Gestión de scroll vertical para iPad PWA ---
+      // Por defecto el iPad es una PWA con viewport fijo y NO debería necesitar
+      // scroll. Pero si una sub-pantalla genera contenido más alto que el viewport,
+      // queremos que se pueda hacer scroll en lugar de quedar cortado.
+      // En el MENÚ PRINCIPAL: nada de scroll (overflow:hidden).
+      // En sub-pantalla: permitir scroll vertical si hace falta.
+      function __setStyleIfDiff(el, prop, val) {
+        if (!el) return;
+        if (el.style[prop] !== val) el.style[prop] = val;
+      }
+      function gestionarScrolliPad() {
+        try {
+          var menuBtn = findMenuBackButton();
+          var enMenuPrincipal = !menuBtn;
+          if (enMenuPrincipal) {
+            __setStyleIfDiff(document.documentElement, 'overflowY', 'hidden');
+            __setStyleIfDiff(document.documentElement, 'overflowX', 'hidden');
+            __setStyleIfDiff(document.body, 'overflowY', 'hidden');
+            __setStyleIfDiff(document.body, 'overflowX', 'hidden');
+            return;
+          }
+          // Sub-pantalla: permitir scroll vertical en html y body
+          __setStyleIfDiff(document.documentElement, 'overflowY', 'auto');
+          __setStyleIfDiff(document.documentElement, 'overflowX', 'hidden');
+          __setStyleIfDiff(document.body, 'overflowY', 'auto');
+          __setStyleIfDiff(document.body, 'overflowX', 'hidden');
+          // -webkit-overflow-scrolling: touch para iOS momentum scroll
+          __setStyleIfDiff(document.body, 'webkitOverflowScrolling', 'touch');
+        } catch (e) {}
+      }
+
+      function runInjections() {
+        injectRefreshButton();
+        injectPartesGlow();
+        replaceBgWithSVG();
+        autoFitEyeView();
+        fixTextoEditMode();
+        try { injectEstadoLocks(); } catch(e) {}
+        try { injectContadores(); } catch(e) {}
+        try { tintarFilasGris(); } catch(e) {}
+        try { gestionarScrolliPad(); } catch(e) {}
+        unifyTableGroups();
+      }
+
+      var observer = new MutationObserver(function() {
+        if (__cntMutating) return;
+        runInjections();
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      document.addEventListener('DOMContentLoaded', function () {
+        runInjections();
+        tryRestoreNavigation();
+      });
+      // If load already happened
+      if (document.readyState !== 'loading') tryRestoreNavigation();
+      setInterval(runInjections, 700);
+
+      // BLOCK pinch-zoom on iPad Safari (iOS 26 still allows it despite user-scalable=no)
+      // Multi-touch touchmove blocking — must use capture phase to beat any inner listeners
+      window.addEventListener('touchmove', function(e) {
+        if (e.touches && e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }, { passive: false, capture: true });
+      // Legacy Safari gesture events (still fire on iPad in some contexts)
+      window.addEventListener('gesturestart', function(e) { e.preventDefault(); }, { passive: false, capture: true });
+      window.addEventListener('gesturechange', function(e) { e.preventDefault(); }, { passive: false, capture: true });
+
+      // Fallback: if zoom still happens somehow, reset on viewport resize
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', function() {
+          __lastFitScreen = '';
+          __lastFitHeight = 0;
+          autoFitEyeView();
+        });
+      }
+    })();
+
+    // PWA service worker registration (offline support)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./service-worker.js').catch(function (err) {
+          console.warn('SW registration failed:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
