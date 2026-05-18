@@ -74,8 +74,9 @@
       display: table-row !important;       /* refuse to be a flex item */
       line-height: 1 !important;
     }
-    table tr[data-uniform-row="1"] > td,
-    table tr[data-uniform-row="1"] > th {
+    /* Regular cells (NOT group-cells with rowspan): hard-clamped to 40px */
+    table tr[data-uniform-row="1"] > td:not([data-group-cell="1"]),
+    table tr[data-uniform-row="1"] > th:not([data-group-cell="1"]) {
       height: 40px !important;
       max-height: 40px !important;
       min-height: 40px !important;
@@ -99,13 +100,27 @@
       display: table-row-group !important;
     }
     /* Vertical group-label cells ("CARGAS LATERALES" / "CARGAS TRASERAS"):
-       they have writing-mode vertical and rowspan. Don't let them ask
-       for more height than the rows they cover; the JS sets data-group-cell
-       and a calculated max-height. We also kill any line-height inflation. */
+       they have writing-mode vertical and a rowspan. Their inline height/
+       max-height is set by unifyTableGroups() to exactly rs*40px so a
+       cell with rowspan=1 cannot ask for more than 40px even if the rotated
+       text would prefer more. We kill line-height + overflow so the
+       clipped text doesn't push the cell taller. */
     table td[data-group-cell="1"],
     table th[data-group-cell="1"] {
       line-height: 1 !important;
       box-sizing: border-box !important;
+      overflow: hidden !important;
+      min-height: 0 !important;
+    }
+    /* Safety net for the period BEFORE unifyTableGroups runs (or if it
+       misses a cycle): any cell with rowspan=1 is forced to 40px max,
+       regardless of writing-mode. Cells with rowspan>=2 are left alone
+       because the rowspan itself defines their height through the rows. */
+    table tr > td[rowspan="1"],
+    table tr > th[rowspan="1"],
+    table tr > td:not([rowspan]),
+    table tr > th:not([rowspan]) {
+      max-height: 40px !important;
       overflow: hidden !important;
     }
 
@@ -1727,21 +1742,34 @@
           if (row.hasAttribute('height')) row.removeAttribute('height');
           if (row.style.height) row.style.height = '';
           if (row.style.minHeight) row.style.minHeight = '';
-          // Same for the cells, but for rowspan>1 we *want* to set an
-          // explicit max-height equal to (rowspan * 40) so the rotated
-          // label cell can't ask for more height than the rows it covers.
+          // For each cell: classify as "group cell" (writing-mode rotated
+          // or rowspan>1) or regular cell, and clamp height accordingly.
+          // Recompute EVERY tick — if React lowers the rowspan, we must
+          // bring the inline max-height down or the cell stretches to
+          // its rotated-text natural height (40-200px in iPhone Safari).
           var tds = row.children;
           for (var k = 0; k < tds.length; k++) {
             var td = tds[k];
             if (td.hasAttribute('height')) td.removeAttribute('height');
-            if (td.style.height) td.style.height = '';
             if (td.style.minHeight) td.style.minHeight = '';
             var rs = parseInt(td.getAttribute('rowspan') || '1', 10);
-            if (rs > 1) {
+            var wm = '';
+            try { wm = window.getComputedStyle(td).writingMode || ''; } catch(e) {}
+            var isRotated = wm.indexOf('vertical') === 0;
+            var isGroupCell = isRotated || rs > 1;
+            var clampPx = (rs * ROW_H) + 'px';
+            if (isGroupCell) {
               if (td.dataset.groupCell !== '1') td.dataset.groupCell = '1';
-              var clampPx = (rs * ROW_H) + 'px';
               if (td.style.maxHeight !== clampPx) td.style.maxHeight = clampPx;
               if (td.style.height !== clampPx) td.style.height = clampPx;
+            } else {
+              // Regular cell — purge any leftover inline that React/our
+              // prior tick may have set (especially after a rowspan drop).
+              if (td.style.height) td.style.height = '';
+              if (td.style.maxHeight) td.style.maxHeight = '';
+              if (td.dataset.groupCell === '1') {
+                try { delete td.dataset.groupCell; } catch(e) { td.removeAttribute('data-group-cell'); }
+              }
             }
           }
         }
@@ -1816,6 +1844,18 @@
         runInjections();
       });
       observer.observe(document.documentElement, { childList: true, subtree: true });
+      // Separate observer for rowspan attribute changes — these don't fire
+      // the childList observer above, but they're exactly what triggers the
+      // 3137 stretch bug (React lowers rowspan without clearing inline maxH).
+      var attrObserver = new MutationObserver(function() {
+        if (__cntMutating) return;
+        try { unifyTableGroups(); } catch (e) {}
+      });
+      attrObserver.observe(document.documentElement, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ['rowspan']
+      });
       document.addEventListener('DOMContentLoaded', function () {
         runInjections();
         tryRestoreNavigation();
