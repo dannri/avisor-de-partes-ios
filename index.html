@@ -1773,6 +1773,55 @@
             }
           }
         }
+        // FINAL SAFETY NET: walk again and clamp anything still oversized.
+        // Safari iOS occasionally lets a row stretch despite all the above
+        // (the "3137 huge cell" bug). For each row > 50px, hunt the cells
+        // that are causing it and brute-force collapse them.
+        clampOversizedRows();
+      }
+
+      // Last-resort clamp: if a table row still measures > 50px, find the
+      // rotated/group cells inside it and force their visual size to zero.
+      // This sacrifices the group label for that ONE row (acceptable — the
+      // same label is also shown by the rowspan cells in the other turnos
+      // OR there's only 1 vehicle in that group anyway, so a label adds
+      // nothing). The point is the row stops being huge.
+      function clampOversizedRows() {
+        try {
+          var rows = document.querySelectorAll('table tbody tr[data-uniform-row="1"]');
+          for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            var rh = row.getBoundingClientRect().height;
+            if (rh <= 50) continue;
+            // Found a stretched row. The culprit is almost always a cell
+            // with writing-mode vertical (rotated label). Collapse them.
+            var cells = row.children;
+            for (var j = 0; j < cells.length; j++) {
+              var td = cells[j];
+              var wm = '';
+              try { wm = window.getComputedStyle(td).writingMode || ''; } catch(e) {}
+              if (wm.indexOf('vertical') !== 0) continue;
+              // It's a rotated cell. If its rowspan is small (<=2), it's
+              // useless visually here — collapse it to 0.
+              var rs = parseInt(td.getAttribute('rowspan') || '1', 10);
+              if (rs > 2) continue;
+              if (td.dataset.collapsedRotated !== '1') {
+                td.dataset.collapsedRotated = '1';
+                td.style.fontSize = '0';
+                td.style.lineHeight = '0';
+                td.style.padding = '0';
+                td.style.border = '0';
+                td.style.height = '0';
+                td.style.maxHeight = '0';
+                td.style.minHeight = '0';
+                td.style.overflow = 'hidden';
+                td.style.width = '0';
+                td.style.maxWidth = '0';
+                td.style.minWidth = '0';
+              }
+            }
+          }
+        } catch (e) {}
       }
 
       // Reset zoom if Safari iPad let pinch-out through despite our blockers.
