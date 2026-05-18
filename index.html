@@ -57,12 +57,18 @@
     }
 
     /* Force every table row to have a fixed height regardless of content/zoom.
-       The yellow gap on row 3137 happens because the app gives that row
-       height:auto and the flex container lets it stretch to fill space. */
+       The "gap before row 3137" happens because the LEFT cell with rowspan
+       (group label "CARGAS LATERALES" rendered with writing-mode vertical)
+       expands when the browser thinks more height is available (e.g. after
+       a pinch-zoom out). The row-span cell drags all the rows it covers
+       with it. We have to clamp the row height AND the rotated label cell. */
     table tr[data-uniform-row="1"] {
       height: 40px !important;
       max-height: 40px !important;
       min-height: 40px !important;
+      flex: 0 0 40px !important;          /* if some parent went flex */
+      display: table-row !important;       /* refuse to be a flex item */
+      line-height: 1 !important;
     }
     table tr[data-uniform-row="1"] > td,
     table tr[data-uniform-row="1"] > th {
@@ -76,10 +82,27 @@
     /* If the table is wrapped in a flex container that stretches it, neutralise it */
     table[data-flat-table="1"] {
       height: auto !important;
+      max-height: none !important;
+      min-height: 0 !important;
       flex: 0 0 auto !important;
+      display: table !important;
+      table-layout: auto !important;
     }
     table[data-flat-table="1"] tbody {
       height: auto !important;
+      max-height: none !important;
+      min-height: 0 !important;
+      display: table-row-group !important;
+    }
+    /* Vertical group-label cells ("CARGAS LATERALES" / "CARGAS TRASERAS"):
+       they have writing-mode vertical and rowspan. Don't let them ask
+       for more height than the rows they cover; the JS sets data-group-cell
+       and a calculated max-height. We also kill any line-height inflation. */
+    table td[data-group-cell="1"],
+    table th[data-group-cell="1"] {
+      line-height: 1 !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
     }
 
     /* Password gate (loads before the app) */
@@ -1585,18 +1608,26 @@
       function unifyTableGroups() {
         // Mark every table and row so our CSS can force uniform 40px height.
         // Also strip any inline height/min-height that React/the bundle sets
-        // (this is what lets row 3137 stretch into the yellow gap).
+        // (this is what lets the gap before row 3137 open up).
+        var ROW_H = 40;
         var tables = document.querySelectorAll('table');
         for (var t = 0; t < tables.length; t++) {
           if (tables[t].dataset.flatTable !== '1') tables[t].dataset.flatTable = '1';
-          // Neutralise any parent that forces the table to stretch with flex/height
+          // Neutralise any ancestor that forces the table to stretch with
+          // flex/height. Walk up further than before and use computed style
+          // so we also catch flex containers defined via Tailwind classes.
           var p = tables[t].parentElement;
-          for (var depth = 0; depth < 3 && p; depth++) {
-            if (p.style && (p.style.flex || p.style.height || p.style.minHeight)) {
-              p.style.flex = '0 0 auto';
-              p.style.height = 'auto';
-              p.style.minHeight = '0';
-            }
+          for (var depth = 0; depth < 10 && p && p !== document.body; depth++) {
+            try {
+              var cs = window.getComputedStyle(p);
+              var isFlexParent = cs.display === 'flex' || cs.display === 'inline-flex';
+              var grows = parseFloat(cs.flexGrow) > 0;
+              if (isFlexParent || grows || p.style.height || p.style.minHeight) {
+                if (p.style.flex !== '0 0 auto') p.style.flex = '0 0 auto';
+                if (p.style.height !== 'auto') p.style.height = 'auto';
+                if (p.style.minHeight !== '0px') p.style.minHeight = '0';
+              }
+            } catch (e) {}
             p = p.parentElement;
           }
         }
@@ -1608,15 +1639,43 @@
           if (row.hasAttribute('height')) row.removeAttribute('height');
           if (row.style.height) row.style.height = '';
           if (row.style.minHeight) row.style.minHeight = '';
-          // Same for the cells
+          // Same for the cells, but for rowspan>1 we *want* to set an
+          // explicit max-height equal to (rowspan * 40) so the rotated
+          // label cell can't ask for more height than the rows it covers.
           var tds = row.children;
           for (var k = 0; k < tds.length; k++) {
             var td = tds[k];
             if (td.hasAttribute('height')) td.removeAttribute('height');
             if (td.style.height) td.style.height = '';
             if (td.style.minHeight) td.style.minHeight = '';
+            var rs = parseInt(td.getAttribute('rowspan') || '1', 10);
+            if (rs > 1) {
+              if (td.dataset.groupCell !== '1') td.dataset.groupCell = '1';
+              var clampPx = (rs * ROW_H) + 'px';
+              if (td.style.maxHeight !== clampPx) td.style.maxHeight = clampPx;
+              if (td.style.height !== clampPx) td.style.height = clampPx;
+            }
           }
         }
+      }
+
+      // Reset zoom if Safari iPad let pinch-out through despite our blockers.
+      // visualViewport.scale < 1 means user zoomed out — re-apply the meta
+      // viewport with initial-scale=1 to snap back. Without this, the rotated
+      // group-label cell (rowspan) tries to grow to fill the extra apparent
+      // height and drags the rows it covers with it.
+      function resetZoomIfNeeded() {
+        try {
+          if (!window.visualViewport) return;
+          var s = window.visualViewport.scale;
+          if (s && Math.abs(s - 1) > 0.02) {
+            var vp = document.querySelector('meta[name=viewport]');
+            if (vp) {
+              vp.setAttribute('content',
+                'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+            }
+          }
+        } catch (e) {}
       }
 
       // --- Gestión de scroll vertical para iPad PWA ---
@@ -1660,6 +1719,7 @@
         try { injectContadores(); } catch(e) {}
         try { tintarFilasGris(); } catch(e) {}
         try { gestionarScrolliPad(); } catch(e) {}
+        try { resetZoomIfNeeded(); } catch(e) {}
         unifyTableGroups();
       }
 
@@ -1692,7 +1752,13 @@
         window.visualViewport.addEventListener('resize', function() {
           __lastFitScreen = '';
           __lastFitHeight = 0;
+          try { resetZoomIfNeeded(); } catch(e) {}
+          try { unifyTableGroups(); } catch(e) {}
           autoFitEyeView();
+        });
+        // Some Safari versions emit 'scroll' (not 'resize') on pinch-zoom.
+        window.visualViewport.addEventListener('scroll', function() {
+          try { resetZoomIfNeeded(); } catch(e) {}
         });
       }
     })();
