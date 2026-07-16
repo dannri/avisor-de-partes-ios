@@ -38,6 +38,10 @@
     html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
     /* Block pinch-zoom on iPad Safari (iOS 26 ignores user-scalable=no) */
     html, body { touch-action: pan-x pan-y; }
+    /* FIX 3137 (capa 1): matar el font-boosting de iOS — el autosizing re-infla
+       el texto al cambiar la escala del viewport (pinch), y con texto VERTICAL
+       ese inflado se convierte en demanda de ALTURA de la celda rotada. */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
     /* Sustituir el tinte azul claro de las filas de la tabla por gris claro.
        El bundle de la app usa Tailwind: blue-50/100 para fondos pares/impares. */
@@ -109,6 +113,58 @@
     table[data-flat-table="1"] tbody {
       height: auto !important;
     }
+
+    /* ═══ FIX 3137/3085 (iOS WebKit) — etiquetas de grupo rotadas ═══
+       CAUSA RAÍZ (investigada a fondo, 16-jul-2026): las etiquetas "CARGAS
+       LATERALES"/"TRASERAS" son <td rowspan=N> con writing-mode:vertical-lr
+       INLINE y SIN altura fijada: su altura es la INTRÍNSECA del texto
+       vertical. El pinch del bundle aplica CSS *zoom* fraccionario (re-maqueta
+       la tabla en cada frame) y el text-autosizing de iOS puede inflar ese
+       texto → la celda exige más altura que la suma de sus N filas → el
+       algoritmo de tablas descarga TODO el exceso en la ÚLTIMA fila del
+       rowspan: la 3137 (último vehículo de CARGAS LATERALES; 3085 es el
+       primero de TRASERAS). height/max-height en tr/td NO pueden limitarlo
+       (height en tabla es un MÍNIMO y max-height directamente se ignora —
+       por eso fallaron los 6 intentos del 18-05-2026).
+       FIX: la celda deja de aportar altura intrínseca — el texto real pasa a
+       font-size:0 en flujo horizontal (sigue en el DOM: React y las
+       detecciones por textContent no se enteran) y la etiqueta VISIBLE se
+       pinta con un ::after en position:absolute (out-of-flow = CERO altura
+       intrínseca por definición), centrada en el alto del grupo, con
+       overflow:hidden (si algún día no cupiera, RECORTA — jamás estira).
+       El rotate(180deg) inline del td sigue activo: voltea también al
+       ::after → mismo aspecto exacto que el original. */
+    td[data-av-rot="1"] {
+      position: relative;
+      writing-mode: horizontal-tb !important;
+      -webkit-writing-mode: horizontal-tb !important;
+      font-size: 0 !important;
+      line-height: 0 !important;
+      color: transparent !important;
+      padding: 0 !important;
+      overflow: hidden;
+    }
+    td[data-av-rot="1"]::after {
+      content: attr(data-av-label);
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      writing-mode: vertical-lr;
+      -webkit-writing-mode: vertical-lr;
+      font-size: 9px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      color: #374151; /* text-gray-700 = el color original de la etiqueta */
+      white-space: nowrap;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    /* Hijos reales dentro de la celda (p. ej. el "+" del modo edición):
+       rescatarlos del font-size:0 heredado. */
+    td[data-av-rot="1"] > * { font-size: 13px; line-height: normal; }
 
     /* Password gate (loads before the app) */
     #__gate__ {
@@ -4116,6 +4172,61 @@
         } catch (e) {}
       }
 
+      // ═══ FIX 3137/3085 — marcar las celdas de etiqueta rotadas ═══
+      // Marca cada <td rowspan> con writing-mode vertical para que el CSS del
+      // head (td[data-av-rot]) anule su altura intrínseca y pinte la etiqueta
+      // vía ::after absoluto. SOLO escribe ATRIBUTOS (data-av-rot/data-av-label):
+      // el MutationObserver vigila childList, no atributos → cero riesgo de
+      // bucle; no necesita __cntMutating.
+      // Detección por el style INLINE del bundle (writingMode:'vertical-lr'),
+      // que NO cambia aunque nuestro CSS fuerce horizontal-tb. (Los intentos de
+      // mayo-2026 fallaban en parte por detectar solo vía getComputedStyle.)
+      function fijarEtiquetasRotadas() {
+        var celdas = document.querySelectorAll('td[rowspan], th[rowspan]');
+        for (var i = 0; i < celdas.length; i++) {
+          var td = celdas[i];
+          var marcada = td.getAttribute('data-av-rot') === '1';
+          // Fuente de verdad: el style INLINE del bundle (nuestro CSS solo pisa
+          // el COMPUTED; el atributo style de React se conserva intacto).
+          var wmInline = '';
+          try { wmInline = (td.style && td.style.writingMode) || ''; } catch (e) {}
+          var esRotada = wmInline.indexOf('vertical') === 0;
+          if (!esRotada && !marcada) {
+            // Fallback SOLO para celdas sin marcar (por si el bundle pasara la
+            // rotación a una clase): computed style + valores legacy de WebKit.
+            // En celdas ya marcadas el computed es horizontal-tb (nuestro CSS),
+            // así que no sirve para re-validar.
+            try {
+              var cs = window.getComputedStyle(td);
+              var wm = (cs.writingMode || cs.webkitWritingMode || '');
+              esRotada = wm.indexOf('vertical') !== -1 || wm === 'tb' || wm === 'tb-lr' || wm === 'tb-rl';
+            } catch (e2) {}
+          }
+          if (!esRotada) {
+            // REVERSIBILIDAD (lección del data-cnt-numcell pegado en v1.5): si
+            // React recicla este td como celda NORMAL (el inline vertical
+            // desaparece), hay que DESMARCAR — si no, la celda de datos se
+            // quedaría invisible (font 0) con la etiqueta vieja encima.
+            if (marcada) {
+              td.removeAttribute('data-av-rot');
+              td.removeAttribute('data-av-label');
+            }
+            continue;
+          }
+          // Etiqueta = SOLO los nodos de texto directos del td (excluye el "+"
+          // del modo edición y cualquier otro control inyectado).
+          var label = '';
+          for (var n = td.firstChild; n; n = n.nextSibling) {
+            if (n.nodeType === 3) label += n.nodeValue;
+          }
+          label = label.replace(/\s+/g, ' ').trim();
+          if (!label) label = (td.getAttribute('data-av-label') || '').trim();
+          if (!label) continue;
+          if (td.getAttribute('data-av-label') !== label) td.setAttribute('data-av-label', label);
+          if (!marcada) td.setAttribute('data-av-rot', '1');
+        }
+      }
+
       function unifyTableGroups() {
         // Mark every table and row so our CSS can force uniform 40px height.
         // Also strip any inline height/min-height that React/the bundle sets
@@ -4172,6 +4283,7 @@
         try { __uaInjectAjustesToggle(); } catch(e) {}
         try { __shaveEyeZoom(); } catch(e) {}
         try { gestionarScrolliPad(); } catch(e) {}
+        try { fijarEtiquetasRotadas(); } catch(e) {}
         try { unifyTableGroups(); } catch(e) {}
       }
 
