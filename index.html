@@ -47,6 +47,19 @@
     table tr td[class*="bg-blue-100"] {
       background-color: #f3f4f6 !important; /* gray-100 */
     }
+
+    /* v1.6 — Texto rojo de avería POR CELDA, agrupado por turno.
+       Reemplaza al selector v1.5 a nivel <tr>, que en ESTADO COMPLETO teñía los
+       3 turnos aunque solo uno estuviera averiado (bug del 3078 en TARDE). Ahora
+       tintarTextosAveriado() marca cada <td> averiado de su turno con
+       data-cnt-averiado-cell="1"; los numcells (data-cnt-numcell) nunca reciben
+       la marca, así que su número va en blanco sobre su propio fondo rojo. El
+       color lo controla este CSS según el atributo, que la función pone/quita en
+       cada pasada → 100% reversible, sin rojos pegados. */
+    td[data-cnt-averiado-cell="1"]:not([data-cnt-numcell="1"]),
+    td[data-cnt-averiado-cell="1"]:not([data-cnt-numcell="1"]) * {
+      color: #dc2626 !important;
+    }
     table tr td[style*="background-color: rgb(239, 246, 255)"],
     table tr td[style*="background-color: rgb(219, 234, 254)"],
     table tr td[style*="background: rgb(239, 246, 255)"],
@@ -60,23 +73,27 @@
       background-color: #f3f4f6 !important;
     }
 
+    /* Letra "A" del botón naranja "copiar averiados" — pseudo-elemento para que
+       el texto NO contamine th.textContent (rompía la detección NOCHE/URB/TARDE
+       de injectContadores e injectEstadoLocks). */
+    [data-copyav-btn]::after {
+      content: 'A';
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.5px;
+    }
+
     /* Force every table row to have a fixed height regardless of content/zoom.
-       The "gap before row 3137" happens because the LEFT cell with rowspan
-       (group label "CARGAS LATERALES" rendered with writing-mode vertical)
-       expands when the browser thinks more height is available (e.g. after
-       a pinch-zoom out). The row-span cell drags all the rows it covers
-       with it. We have to clamp the row height AND the rotated label cell. */
+       The yellow gap on row 3137 happens because the app gives that row
+       height:auto and the flex container lets it stretch to fill space. */
     table tr[data-uniform-row="1"] {
       height: 40px !important;
       max-height: 40px !important;
       min-height: 40px !important;
-      flex: 0 0 40px !important;          /* if some parent went flex */
-      display: table-row !important;       /* refuse to be a flex item */
-      line-height: 1 !important;
     }
-    /* Regular cells (NOT group-cells with rowspan): hard-clamped to 40px */
-    table tr[data-uniform-row="1"] > td:not([data-group-cell="1"]),
-    table tr[data-uniform-row="1"] > th:not([data-group-cell="1"]) {
+    table tr[data-uniform-row="1"] > td,
+    table tr[data-uniform-row="1"] > th {
       height: 40px !important;
       max-height: 40px !important;
       min-height: 40px !important;
@@ -87,63 +104,10 @@
     /* If the table is wrapped in a flex container that stretches it, neutralise it */
     table[data-flat-table="1"] {
       height: auto !important;
-      max-height: none !important;
-      min-height: 0 !important;
       flex: 0 0 auto !important;
-      display: table !important;
-      table-layout: auto !important;
     }
     table[data-flat-table="1"] tbody {
       height: auto !important;
-      max-height: none !important;
-      min-height: 0 !important;
-      display: table-row-group !important;
-    }
-    /* Vertical group-label cells ("CARGAS LATERALES" / "CARGAS TRASERAS"):
-       they have writing-mode vertical and a rowspan. Their inline height/
-       max-height is set by unifyTableGroups() to exactly rs*40px so a
-       cell with rowspan=1 cannot ask for more than 40px even if the rotated
-       text would prefer more. We kill line-height + overflow so the
-       clipped text doesn't push the cell taller. */
-    table td[data-group-cell="1"],
-    table th[data-group-cell="1"] {
-      line-height: 1 !important;
-      box-sizing: border-box !important;
-      overflow: hidden !important;
-      min-height: 0 !important;
-    }
-    /* ROOT FIX — "row 3137/3085 stretch" on iPhone Safari.
-       Two-layer defence:
-       LAYER 1 (JS, unifyTableGroups): uses setProperty(p,v,'important') which
-         creates an INLINE !important style. This is the HIGHEST priority in the
-         author cascade — it beats any !important in app.css regardless of selector
-         specificity. Regular el.style.x=v loses to CSS !important; setProperty
-         with 'important' wins over everything in the author origin.
-       LAYER 2 (this CSS): kicks in once data-small-rs="1" is set, as backup.
-       Both layers force writing-mode:horizontal-tb + font-size:0 so the cell has
-       0px content height — Safari then respects the advisory height:40px on the row. */
-    table td[data-small-rs="1"],
-    table th[data-small-rs="1"] {
-      writing-mode: horizontal-tb !important;
-      -webkit-writing-mode: horizontal-tb !important;
-      font-size: 0px !important;
-      line-height: 0 !important;
-      padding-top: 0 !important;
-      padding-bottom: 0 !important;
-      height: 40px !important;
-      max-height: 40px !important;
-      overflow: hidden !important;
-    }
-    /* Safety net for the period BEFORE unifyTableGroups runs (or if it
-       misses a cycle): any cell with rowspan=1 is forced to 40px max,
-       regardless of writing-mode. Cells with rowspan>=2 are left alone
-       because the rowspan itself defines their height through the rows. */
-    table tr > td[rowspan="1"],
-    table tr > th[rowspan="1"],
-    table tr > td:not([rowspan]),
-    table tr > th:not([rowspan]) {
-      max-height: 40px !important;
-      overflow: hidden !important;
     }
 
     /* Password gate (loads before the app) */
@@ -362,10 +326,827 @@
       setTimeout(function () { try { if (!input.disabled) input.focus(); } catch (e) {} }, 100);
     })();
   </script>
+
   <script>
     (function () {
       function stripDiacritics(s) {
         return s.normalize ? s.normalize('NFD').replace(/[̀-ͯ]/g, '') : s;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // "ÚLTIMA ACT." de SERVICIOS (NOCHE / URBANIZACIONES / TARDE individuales)
+      //
+      // Objetivo: cuando el usuario abre el candado de un servicio individual,
+      // edita algo y lo cierra, sellar la fecha/hora en Firestore (campo NUEVO
+      // 'ultimaActServicio') y mostrarla bajo el título. NO en ESTADO COMPLETO.
+      //
+      // - NO toca averías ni el campo 'timestamp' del bundle.
+      // - Escribe con una app Firebase SECUNDARIA propia (compat SDK), nunca por
+      //   fibers → la parte arriesgada (fibers) es solo LECTURA.
+      // - Detección de cambios: foto de las celdas al abrir vs al cerrar.
+      // - Compartido entre dispositivos (mismo doc Firestore que lee el bundle).
+      // ═══════════════════════════════════════════════════════════════════════
+
+      // ── RAMA ──────────────────────────────────────────────────────────────────
+      // false = rama MÍA (v1.X): avisos + push + "ÚLTIMA ACT." en servicios.
+      // true  = rama G (v1.XG, "para el resto de gente"): SIN avisos/push y SIN
+      //         "ÚLTIMA ACT." en NOCHE/URB/TARDE (el de AVERÍAS es del bundle y
+      //         se conserva). Todo lo demás (lápiz, añadir camiones, copia
+      //         atómica, contadores...) idéntico en ambas ramas.
+      // ⚠️ NO editar a mano: build-g.ps1 la pone a true al compilar la rama G.
+      var __AV_RAMA_G = true;
+
+      var __UA_CFG = {
+        apiKey: "AIzaSyAOLHPUR4mNd4Tvo90uvTSGDNTfDb0Al64",
+        authDomain: "partes-engargados.firebaseapp.com",
+        projectId: "partes-engargados",
+        storageBucket: "partes-engargados.firebasestorage.app",
+        messagingSenderId: "607011501085",
+        appId: "1:607011501085:web:03e6fa61f8bc31955682f4"
+      };
+      var __UA_APPID = "proyecto-avisor-partes"; // appId interno de la colección artifacts
+      var __uaDb = null;          // firestore de NUESTRA app secundaria
+      // Estado del WATCHER en tiempo real (sella la hora al modificar CUALQUIER celda,
+      // lo haga quien lo haga, desde cualquier dispositivo). Sustituye al sellado por
+      // candado/salir de versiones anteriores.
+      var __uaWatching = false;   // ¿listener onSnapshot de SERVICIOS ya enganchado?
+      var __uaUnsub = null;       // handle para desuscribir servicios
+      var __uaBaseline = {};      // { docId: hash de registros visto por última vez }
+      // --- Avisos de edición (v1.6.2, SOLO APK) ---
+      var __uaWatchAver = false;  // ¿listener onSnapshot de AVERÍAS ya enganchado?
+      var __uaUnsubAver = null;   // handle para desuscribir averías
+      var __uaBaseAver = {};      // { docId: hash de avería visto por última vez }
+      var __uaSelfEditUntil = 0;  // ventana tras editar YO: silenciar mi propio eco
+      var __uaLastNotif = {};     // último aviso POR CLAVE (NOCHE/URB/TARDE/AVERIAS) — anti-spam
+      var __UA_NOTIF_COOLDOWN = 600000; // 10 min en ms
+
+      // Carga DIFERIDA de Firebase: el SDK NO está en el <head> (rompía el arranque
+      // del APK: firebase-firestore-compat re-lanza un error al evaluarse junto al
+      // bundle React → pantalla negra). Lo cargamos por JS SOLO cuando hace falta
+      // sellar, ya con la app montada. app-compat PRIMERO, luego firestore-compat
+      // (orden estricto). Guardado con promesa para no inyectar dos veces.
+      var __uaFbLoading = null;
+      var __uaFbReady = false;
+      function __uaLoadScript(src) {
+        return new Promise(function (resolve, reject) {
+          var prev = document.querySelector('script[data-ua-fb="' + src + '"]');
+          if (prev && prev.getAttribute('data-ua-loaded') === '1') { resolve(); return; }
+          var s = document.createElement('script');
+          s.src = src;
+          s.async = false; // preservar orden de ejecución
+          s.setAttribute('data-ua-fb', src);
+          s.onload = function () { s.setAttribute('data-ua-loaded', '1'); resolve(); };
+          s.onerror = function () { reject(new Error('No se pudo cargar ' + src)); };
+          document.head.appendChild(s);
+        });
+      }
+      function __uaEnsureFirebase() {
+        if (__uaFbReady && typeof firebase !== 'undefined') return Promise.resolve();
+        if (__uaFbLoading) return __uaFbLoading;
+        __uaFbLoading = __uaLoadScript('./assets/firebase-app-compat.js')
+          .then(function () { return __uaLoadScript('./assets/firebase-firestore-compat.js'); })
+          .then(function () { __uaFbReady = true; })
+          .catch(function (e) { __uaFbLoading = null; throw e; }); // permitir reintento
+        return __uaFbLoading;
+      }
+
+      function __uaInitFirebase() {
+        if (__uaDb) return __uaDb;
+        try {
+          if (typeof firebase === 'undefined' || !firebase.initializeApp) return null;
+          var app;
+          // Reutilizar nuestra app secundaria si ya existe (evita "app already exists")
+          try { app = firebase.app('avisorUltimaAct'); }
+          catch (e) { app = firebase.initializeApp(__UA_CFG, 'avisorUltimaAct'); }
+          __uaDb = firebase.firestore(app);
+          return __uaDb;
+        } catch (e) { return null; }
+      }
+
+      // Normaliza una fecha "YYYY-MM-DD" o "DD-MM-YYYY" a "DD-MM-YYYY" (formato docId).
+      function __uaFechaDocId(f) {
+        if (!f) return null;
+        var m = f.match(/^(\d{4})-(\d{2})-(\d{2})$/);      // YYYY-MM-DD
+        if (m) return m[3] + '-' + m[2] + '-' + m[1];
+        if (/^\d{2}-\d{2}-\d{4}$/.test(f)) return f;        // ya DD-MM-YYYY
+        return null;
+      }
+
+      // Devuelve el doc {id,...} de servicios para un turno+fecha actuales, usando
+      // el array en memoria (tiene el .id REAL). Si no está, compone el id estándar.
+      function __uaDocInfoTurno(turno) {
+        try {
+          var servicios = __lkReadServicios();
+          var fecha = __lkReadFechaActual();
+          var fechaDoc = __uaFechaDocId(fecha);
+          if (servicios) {
+            for (var i = 0; i < servicios.length; i++) {
+              var s = servicios[i];
+              if (s && s.turno === turno) {
+                // Casar por fecha si la sabemos; si no, devolver el primero del turno.
+                if (!fechaDoc) return s;
+                var idF = (s.id || '').split('_').slice(-1)[0]; // parte fecha del id
+                if (idF === fechaDoc) return s;
+                if (s.fechaStr && s.fechaStr.replace(/\//g, '-') === fechaDoc) return s;
+              }
+            }
+          }
+          if (fechaDoc) {
+            return { id: turno.replace(/\s+/g, '_') + '_' + fechaDoc, turno: turno, __nuevo: true };
+          }
+        } catch (e) {}
+        return null;
+      }
+
+      // Foto del DATO REAL de un turno para detectar cambios (no la representación
+      // del DOM). Usa los 'registros' del doc en memoria (el array que ya carga el
+      // bundle desde Firestore). Es estable esté el turno bloqueado o editable —
+      // al contrario que leer las celdas, que cambian de <select> a texto al
+      // bloquear y darían falsos positivos. Devuelve un string comparable, o null
+      // si no se puede leer (en ese caso NO se sella, para no fallar).
+      // Serializa de forma determinista SOLO los 4 campos de celda de cada registro
+      // (estado/cargaNo/cargaSiTipo/otros), claves ordenadas. IGNORA 'ultimaActServicio'
+      // y 'timestamp' → así, cuando recibimos de vuelta nuestra propia escritura de la
+      // hora, el hash NO cambia y NO re-sellamos (evita el bucle infinito).
+      function __uaRegistrosHash(reg) {
+        if (!reg || typeof reg !== 'object') return '{}';
+        var ids = Object.keys(reg).sort();
+        var partes = [];
+        for (var i = 0; i < ids.length; i++) {
+          var r = reg[ids[i]] || {};
+          partes.push(ids[i] + '=' +
+            (r.estado == null ? '' : r.estado) + ',' +
+            (r.cargaNo ? '1' : '0') + ',' +
+            (r.cargaSiTipo == null ? '' : r.cargaSiTipo) + ',' +
+            (r.otros == null ? '' : r.otros));
+        }
+        return partes.join('|');
+      }
+      function __uaSnapshotRegistros(turno) {
+        try {
+          var info = __uaDocInfoTurno(turno);
+          if (!info) return null;
+          return __uaRegistrosHash(info.registros);
+        } catch (e) { return null; }
+      }
+
+      // ── "Te lo perdiste" (v1.8.2): avisar al abrir de cambios hechos mientras la
+      // app estaba CERRADA. Persistimos en localStorage el hash de registros visto por
+      // última vez de cada doc; al abrir, la 1ª foto del watcher lo compara: si difiere
+      // (y es de HOY) → alguien lo cambió mientras no mirabas → aviso (sin sellar la
+      // hora: la hora correcta ya la da updateTime del servidor).
+      function __uaLoadSeen(key) { try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { return {}; } }
+      var __uaSeenServ = __uaLoadSeen('avisor_seen_serv'); // hashes de servicios de sesiones anteriores
+      var __uaSeenAver = __uaLoadSeen('avisor_seen_aver'); // hashes de averías
+      var __uaSeenSaveT = {};
+      function __uaSaveSeen(key, obj) {
+        try {
+          if (__uaSeenSaveT[key]) clearTimeout(__uaSeenSaveT[key]);
+          __uaSeenSaveT[key] = setTimeout(function () { try { localStorage.setItem(key, JSON.stringify(obj)); } catch (e) {} }, 1200);
+        } catch (e) {}
+      }
+      // ¿El docId ('TURNO_DD-MM-YYYY') es de HOY (fecha real del sistema)?
+      function __uaEsDocHoy(id) {
+        try {
+          var d = new Date();
+          var hoy = ('0' + d.getDate()).slice(-2) + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + d.getFullYear();
+          return String(id).indexOf('_' + hoy) >= 0;
+        } catch (e) { return false; }
+      }
+
+      // WATCHER en tiempo real: escucha TODOS los docs de servicios_diarios. Cuando
+      // los 'registros' de un doc cambian (alguien editó una celda, en cualquier
+      // dispositivo), sella la hora (`ultimaActServicio = Date.now()`). Cubre el caso
+      // del compañero que edita desde otro equipo. Idempotente (engancha una sola vez).
+      function __uaStartWatcher() {
+        if (__uaWatching) return;
+        __uaWatching = true; // antes del async para evitar doble enganche
+        __uaEnsureFirebase().then(function () {
+          var db = __uaInitFirebase();
+          if (!db) { __uaWatching = false; return; } // permitir reintento
+          try {
+            __uaUnsub = db.collection('artifacts').doc(__UA_APPID)
+              .collection('public').doc('data')
+              .collection('servicios_diarios')
+              .onSnapshot(function (qs) {
+                try {
+                  qs.docChanges().forEach(function (ch) {
+                    if (ch.type === 'removed') { delete __uaBaseline[ch.doc.id]; return; }
+                    var id = ch.doc.id;
+                    var data = ch.doc.data() || {};
+                    var hash = __uaRegistrosHash(data.registros);
+                    var prev = __uaBaseline[id];
+                    __uaBaseline[id] = hash;            // foto base de ESTA sesión
+                    if (typeof prev === 'undefined') {
+                      // 1ª vez esta sesión: ¿cambió mientras la app estaba CERRADA?
+                      var antes = __uaSeenServ[id];
+                      __uaSeenServ[id] = hash; __uaSaveSeen('avisor_seen_serv', __uaSeenServ);
+                      if (typeof antes !== 'undefined' && antes !== hash && __uaEsDocHoy(id)) {
+                        // Alguien lo tocó mientras no mirabas → avisar (NO sellar: la
+                        // hora correcta ya la pone updateTime del servidor).
+                        __uaNotificar('servicios', (id.split('_')[0] || ''), true);
+                      }
+                      return;
+                    }
+                    if (hash === prev) return;          // sin cambios (eco de nuestra propia hora, etc.)
+                    __uaSeenServ[id] = hash; __uaSaveSeen('avisor_seen_serv', __uaSeenServ);
+                    // Cambio EN VIVO → sellar la hora en ese doc.
+                    db.collection('artifacts').doc(__UA_APPID)
+                      .collection('public').doc('data')
+                      .collection('servicios_diarios').doc(id)
+                      .set({ ultimaActServicio: Date.now() }, { merge: true });
+                    // Avisar — salvo que el cambio lo haya hecho YO ahora mismo
+                    // (ventana de auto-edición). El TURNO sale del id del doc
+                    // ('NOCHE_15-07-2026' → 'NOCHE') para el check por turno.
+                    __uaNotificar('servicios', (id.split('_')[0] || ''));
+                  });
+                } catch (e) {}
+              }, function () { /* error del listener → silenciar, sin reintento en bucle */ });
+          } catch (e) { __uaWatching = false; }
+        }).catch(function () { __uaWatching = false; });
+      }
+
+      // ── Avisos de edición (v1.6.2, SOLO APK) ──────────────────────────────────
+      // Banner en pantalla + intento de notificación del sistema cuando OTRO edita.
+      // El banner funciona con la app abierta; la notificación del sistema puede que
+      // el WebView de Android la ignore (no hay puente nativo) → es "best effort".
+
+      // Plugin nativo de notificaciones (existe solo en el APK recompilado v1.8+).
+      function __uaGetLN() {
+        try { return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications; } catch (e) { return null; }
+      }
+      // Canal de alta prioridad (Android 8+): sin canal, las notificaciones se
+      // descartan en silencio. importance:5 = HIGH (aparece arriba + sonido).
+      var __uaChannelReady = false;
+      function __uaEnsureChannel() {
+        try {
+          var LN = __uaGetLN();
+          if (LN && LN.createChannel && !__uaChannelReady) {
+            __uaChannelReady = true;
+            LN.createChannel({ id: 'avisor_avisos', name: 'Avisos de partes', description: 'Cuando otro edita un servicio o una avería', importance: 5, visibility: 1 }).catch(function () {});
+          }
+        } catch (e) {}
+      }
+      // Pide permiso de notificaciones. v1.8: plugin nativo (POST_NOTIFICATIONS);
+      // si no, API web (Electron). UNA sola vez por sesión (forzar=true para el botón
+      // de prueba). El watcher lo llama cada pasada, por eso el flag anti-repetición.
+      var __uaPermPedido = false;
+      function __uaPedirPermisoNotif(forzar) {
+        try {
+          var LN = __uaGetLN();
+          if (LN && LN.requestPermissions) {
+            __uaEnsureChannel();
+            if (__uaPermPedido && !forzar) return;
+            __uaPermPedido = true;
+            LN.requestPermissions().catch(function () {});
+            return;
+          }
+        } catch (e) {}
+        try {
+          if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            Notification.requestPermission();
+          }
+        } catch (e) {}
+      }
+      // Botón "Probar aviso" de AJUSTES: fuerza el permiso y lanza una notificación
+      // de prueba YA. Diagnóstico: si sale en la barra, el mecanismo funciona.
+      function __uaNotifPrueba() {
+        try { __uaPedirPermisoNotif(true); } catch (e) {}
+        setTimeout(function () {
+          var hora = '';
+          try { hora = new Date().toLocaleTimeString('es-ES'); } catch (e) {}
+          try { __uaBanner('🔔 Aviso de prueba — ' + hora); } catch (e) {}
+          try { __uaNotifSistema('AVISOR DE PARTES', 'Notificación de prueba ✓ Si la ves en la barra, funciona.'); } catch (e) {}
+        }, 700);
+      }
+
+      // ── PUSH REAL con la app CERRADA (v1.9) ───────────────────────────────────
+      // FCM vía NUESTRO proyecto Firebase 'avisor-push' (mensajería propia, cero
+      // acceso a la consola del compañero). El móvil registra su token FCM y lo
+      // guarda (con sus 4 checks) en la BD compartida (push_tokens/{token}); un
+      // VIGILANTE en Cloudflare Workers sondea la BD cada minuto por la API REST
+      // pública y envía el push a los tokens con el check activado. Con la app
+      // ABIERTA el aviso lo da el watcher local (el push en 1er plano se ignora).
+      var __uaPushToken = null;
+      var __uaPushReg = false;
+      var __uaSelfEditWriteAt = 0;
+      function __uaGetPN() {
+        try { return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications; } catch (e) { return null; }
+      }
+      // Escribe/actualiza el doc del token en la BD compartida (merge).
+      function __uaPushDocSet(campos) {
+        try {
+          if (!__uaPushToken) return;
+          __uaEnsureFirebase().then(function () {
+            var db = __uaInitFirebase(); if (!db) return;
+            db.collection('artifacts').doc(__UA_APPID)
+              .collection('public').doc('data')
+              .collection('push_tokens').doc(__uaPushToken)
+              .set(campos, { merge: true }).catch(function () {});
+          }).catch(function () {});
+        } catch (e) {}
+      }
+      function __uaPushFlags() {
+        return {
+          noche: __uaNotifActivada('NOCHE'),
+          urb: __uaNotifActivada('URBANIZACIONES'),
+          tarde: __uaNotifActivada('TARDE'),
+          averias: __uaNotifActivada('AVERIAS')
+        };
+      }
+      // Sincroniza los checks al doc del token (se llama al togglearlos en AJUSTES).
+      function __uaPushSyncFlags() {
+        try {
+          var f = __uaPushFlags(); f.updatedAt = Date.now();
+          __uaPushDocSet(f);
+        } catch (e) {}
+      }
+      // Registro FCM: una vez por sesión, al entrar en pantalla de servicios.
+      function __uaPushRegistrar() {
+        try {
+          if (__uaPushReg) return;
+          var PN = __uaGetPN();
+          if (!PN || !PN.register) return; // sin plugin (APK viejo / escritorio)
+          __uaPushReg = true;
+          try {
+            PN.addListener('registration', function (t) {
+              try {
+                if (!t || !t.value) return;
+                __uaPushToken = t.value;
+                var f = __uaPushFlags(); f.token = t.value; f.updatedAt = Date.now();
+                __uaPushDocSet(f);
+              } catch (e) {}
+            });
+            // Push recibido con la app en 1er plano → IGNORAR (el watcher local ya
+            // avisó al instante; así no hay duplicados).
+            PN.addListener('pushNotificationReceived', function () {});
+          } catch (e) {}
+          PN.requestPermissions().then(function (r) {
+            try { if (!r || r.receive !== 'denied') PN.register(); } catch (e) {}
+          }).catch(function () {});
+        } catch (e) {}
+      }
+      // Marca de auto-edición en el doc del token (throttled 60 s): el vigilante NO
+      // envía el push del cambio al propio dispositivo que lo hizo.
+      function __uaPushSelfEdit() {
+        try {
+          if (!__uaPushToken) return;
+          var ahora = Date.now();
+          if (ahora - __uaSelfEditWriteAt < 60000) return;
+          __uaSelfEditWriteAt = ahora;
+          __uaPushDocSet({ selfEditAt: ahora });
+        } catch (e) {}
+      }
+
+      // Muestra un banner llamativo arriba unos segundos (toast).
+      function __uaBanner(texto) {
+        try {
+          __cntMutating = true;
+          var b = document.getElementById('__ua_toast__');
+          if (!b) {
+            b = document.createElement('div');
+            b.id = '__ua_toast__';
+            b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483646;' +
+              'background:#1d4ed8;color:#fff;font-family:inherit;font-size:14px;font-weight:700;' +
+              'text-align:center;padding:10px 14px;box-shadow:0 3px 10px rgba(0,0,0,0.35);' +
+              'transition:opacity 0.3s;';
+            document.body.appendChild(b);
+          }
+          b.textContent = texto;
+          b.style.display = 'block';
+          b.style.opacity = '1';
+          if (__uaBanner.__t) clearTimeout(__uaBanner.__t);
+          __uaBanner.__t = setTimeout(function () {
+            try { b.style.opacity = '0'; setTimeout(function () { b.style.display = 'none'; }, 350); } catch (e) {}
+          }, 6000);
+          setTimeout(function () { __cntMutating = false; }, 50);
+        } catch (e) { __cntMutating = false; }
+      }
+
+      // Notificación del sistema. v1.8: con el plugin nativo LocalNotifications
+      // (APK recompilado) va a la BARRA DE NOTIFICACIONES de Android de verdad
+      // (con sonido, visible en pantalla de bloqueo). Fallback: API web (en el
+      // WebView antiguo se ignora; en Electron funciona).
+      function __uaNotifSistema(titulo, cuerpo) {
+        // Con push FCM activo y la app en 2º plano, el aviso lo pone el push del
+        // vigilante (llega aunque Android congele el proceso) → no duplicar aquí.
+        try { if (__uaPushToken && typeof document !== 'undefined' && document.hidden) return; } catch (e) {}
+        try {
+          var LN = __uaGetLN();
+          if (LN && LN.schedule) {
+            __uaEnsureChannel();
+            LN.schedule({ notifications: [{
+              id: (Date.now() % 2000000000) | 0,
+              title: titulo,
+              body: cuerpo,
+              channelId: 'avisor_avisos'
+            }] }).catch(function () {});
+            return;
+          }
+        } catch (e) {}
+        try {
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            new Notification(titulo, { body: cuerpo, tag: 'avisor-' + titulo });
+          }
+        } catch (e) {}
+      }
+
+      // ── Avisos GRANULARES (v1.8.1): check independiente por turno + averías ──
+      // Claves: 'NOCHE' | 'URBANIZACIONES' | 'TARDE' | 'AVERIAS'. Por defecto TODO
+      // activado. Anti-spam de 10 min POR CLAVE (editar TARDE no silencia NOCHE).
+      var __UA_NOTIF_KEYS = {
+        NOCHE: 'avisor_notif_noche',
+        URBANIZACIONES: 'avisor_notif_urb',
+        TARDE: 'avisor_notif_tarde',
+        AVERIAS: 'avisor_notif_averias'
+      };
+      // Migración única desde el interruptor global antiguo (v1.7.4): si estaba
+      // APAGADO, arrancar con las 4 claves apagadas.
+      function __uaNotifMigrar() {
+        try {
+          if (localStorage.getItem('avisor_notif_migrado') === '1') return;
+          if (localStorage.getItem('avisor_notif_enabled') === '0') {
+            for (var k in __UA_NOTIF_KEYS) localStorage.setItem(__UA_NOTIF_KEYS[k], '0');
+          }
+          localStorage.setItem('avisor_notif_migrado', '1');
+        } catch (e) {}
+      }
+      function __uaNotifActivada(clave) {
+        try {
+          __uaNotifMigrar();
+          var k = __UA_NOTIF_KEYS[clave];
+          if (!k) return false;
+          return localStorage.getItem(k) !== '0';
+        } catch (e) { return true; }
+      }
+      // Dispara el aviso. tipo 'servicios' → turno = 'NOCHE'|'URBANIZACIONES'|'TARDE'
+      // (sacado del id del doc); tipo 'averias'. Respeta: check por clave, ventana de
+      // auto-edición, anti-spam por clave.
+      // missed=true → el cambio ocurrió mientras la app estaba CERRADA (se detecta al
+      // abrir comparando con lo persistido); mensaje en pasado.
+      function __uaNotificar(tipo, turno, missed) {
+        try {
+          var clave = (tipo === 'averias') ? 'AVERIAS' : String(turno || '').toUpperCase();
+          if (!__UA_NOTIF_KEYS[clave]) return;   // turno desconocido → no avisar
+          if (!__uaNotifActivada(clave)) return; // check de AJUSTES apagado
+          var ahora = Date.now();
+          // Si acabo de editar yo, ignorar el eco (ventana corta).
+          if (ahora < __uaSelfEditUntil) return;
+          if (ahora - (__uaLastNotif[clave] || 0) < __UA_NOTIF_COOLDOWN) return;
+          __uaLastNotif[clave] = ahora;
+          var hora = '';
+          try { hora = new Date(ahora).toLocaleTimeString('es-ES'); } catch (e) {}
+          if (tipo === 'servicios') {
+            if (missed) {
+              __uaBanner('⚠️ El relevo de ' + clave + ' se modificó mientras no mirabas');
+              __uaNotifSistema('AVISOR DE PARTES', 'El relevo de ' + clave + ' se modificó mientras la app estaba cerrada.');
+            } else {
+              __uaBanner('⚠️ El relevo de ' + clave + ' se está editando — ' + hora);
+              __uaNotifSistema('AVISOR DE PARTES', 'El relevo de ' + clave + ' se está editando — ' + hora);
+            }
+          } else {
+            if (missed) {
+              __uaBanner('🔧 Se modificaron averías mientras no mirabas');
+              __uaNotifSistema('AVISOR DE PARTES', 'Se modificaron averías mientras la app estaba cerrada.');
+            } else {
+              __uaBanner('🔧 Las averías han sido actualizadas — ' + hora);
+              __uaNotifSistema('AVISOR DE PARTES', 'Las averías han sido actualizadas — ' + hora);
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Hash de los campos de una avería (ignora 'timestamp' para no falsos positivos).
+      function __uaAveriaHash(d) {
+        if (!d || typeof d !== 'object') return '{}';
+        return [d.categoria, d.vehiculo, d.fecha, d.descripcion, d.localizacion, d.notas]
+          .map(function (x) { return x == null ? '' : String(x); }).join('|');
+      }
+
+      // WATCHER de AVERÍAS: escucha la colección 'averias'. Cuando un doc cambia
+      // (alguien editó/creó una avería), avisa. Misma lógica que servicios:
+      // baseline en la 1ª vista, sin re-disparo por eco, idempotente.
+      function __uaStartWatcherAverias() {
+        if (__uaWatchAver) return;
+        __uaWatchAver = true;
+        __uaEnsureFirebase().then(function () {
+          var db = __uaInitFirebase();
+          if (!db) { __uaWatchAver = false; return; }
+          try {
+            __uaUnsubAver = db.collection('artifacts').doc(__UA_APPID)
+              .collection('public').doc('data')
+              .collection('averias')
+              .onSnapshot(function (qs) {
+                try {
+                  qs.docChanges().forEach(function (ch) {
+                    if (ch.type === 'removed') { delete __uaBaseAver[ch.doc.id]; return; }
+                    var id = ch.doc.id;
+                    var hash = __uaAveriaHash(ch.doc.data());
+                    var prev = __uaBaseAver[id];
+                    __uaBaseAver[id] = hash;
+                    if (typeof prev === 'undefined') {
+                      // 1ª vez esta sesión: ¿se editó mientras la app estaba cerrada?
+                      var antesA = __uaSeenAver[id];
+                      __uaSeenAver[id] = hash; __uaSaveSeen('avisor_seen_aver', __uaSeenAver);
+                      if (typeof antesA !== 'undefined' && antesA !== hash) __uaNotificar('averias', null, true);
+                      return;
+                    }
+                    if (hash === prev) return;               // sin cambio real
+                    __uaSeenAver[id] = hash; __uaSaveSeen('avisor_seen_aver', __uaSeenAver);
+                    __uaNotificar('averias');
+                  });
+                } catch (e) {}
+              }, function () {});
+          } catch (e) { __uaWatchAver = false; }
+        }).catch(function () { __uaWatchAver = false; });
+      }
+
+      // (El sellado de la hora lo hace ahora __uaStartWatcher escribiendo inline al
+      // detectar cambios en los registros. Ya no hay __uaStamp/__uaWriteStampSync.)
+
+      // ── AVISOS en el panel de AJUSTES (v1.8.1): 4 checks independientes ───────
+      // SERVICIOS → NOCHE / URBANIZACIONES / TARDE, y GESTIÓN → AVERÍAS. Cada uno
+      // activa/desactiva SU notificación. Idempotente + guard __cntMutating (solo
+      // se pinta al crear y al pulsar — NUNCA cada pasada, o el observer se bucla).
+      var __UA_NOTIF_UI = [
+        { clave: 'NOCHE',          etiqueta: 'NOCHE',          grupo: 'SERVICIOS' },
+        { clave: 'URBANIZACIONES', etiqueta: 'URBANIZACIONES', grupo: 'SERVICIOS' },
+        { clave: 'TARDE',          etiqueta: 'TARDE',          grupo: 'SERVICIOS' },
+        { clave: 'AVERIAS',        etiqueta: 'AVERÍAS',        grupo: 'GESTIÓN' }
+      ];
+      function __uaEstiloSwitch(on) {
+        return 'display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;' +
+          'margin:0 0 6px;padding:9px 12px;border-radius:10px;cursor:pointer;border:1px solid ' +
+          (on ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.12)') + ';' +
+          'background:' + (on ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)') + ';';
+      }
+      // Pinta el estado de UNA fila (botón + pill) según su localStorage.
+      function __uaPintaSwitch(sec, clave) {
+        try {
+          var on = __uaNotifActivada(clave);
+          var btn = sec.querySelector('[data-ua-notif="' + clave + '"]');
+          if (!btn) return;
+          btn.style.cssText = __uaEstiloSwitch(on);
+          var pill = btn.querySelector('[data-ua-pill]');
+          if (pill) {
+            pill.textContent = on ? 'ACTIVADO' : 'APAGADO';
+            pill.style.cssText = 'flex-shrink:0;font-size:10px;font-weight:900;letter-spacing:0.05em;' +
+              'padding:3px 9px;border-radius:9999px;color:#fff;background:' + (on ? '#16a34a' : '#6b7280') + ';';
+          }
+        } catch (e) {}
+      }
+      function __uaInjectAjustesToggle() {
+        if (__AV_RAMA_G) return; // rama G: sin sección AVISOS en AJUSTES
+        try {
+          var titulos = document.querySelectorAll('p');
+          var refSec = null;
+          for (var i = 0; i < titulos.length; i++) {
+            if ((titulos[i].textContent || '').trim() === 'CONTRASEÑAS DE ACCESO') { refSec = titulos[i]; break; }
+          }
+          if (!refSec) return;                       // panel cerrado
+          var secCont = refSec.parentNode;
+          var scroll = secCont && secCont.parentNode;
+          if (!scroll) return;
+          // Ya está → NO tocar el DOM cada pasada (pintar textContent dispararía el
+          // observer en bucle). El aspecto se pinta al crear y al pulsar.
+          if (document.getElementById('__ua_notif_section__')) return;
+
+          __cntMutating = true;
+          try {
+            var sec = document.createElement('div');
+            sec.id = '__ua_notif_section__';
+            sec.style.cssText = 'padding:16px;border-top:1px solid rgba(255,255,255,0.10);';
+            var html = '<p style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.4);margin:0 0 12px">AVISOS</p>';
+            var grupoAct = '';
+            for (var u = 0; u < __UA_NOTIF_UI.length; u++) {
+              var it = __UA_NOTIF_UI[u];
+              if (it.grupo !== grupoAct) {
+                grupoAct = it.grupo;
+                html += '<p style="font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.3);margin:' + (u === 0 ? '0' : '10px') + ' 2px 6px">' + it.grupo + '</p>';
+              }
+              html += '<button data-ua-notif="' + it.clave + '" type="button">' +
+                '<span style="flex:1;text-align:left;font-size:12px;font-weight:800;color:#fff">' + it.etiqueta + '</span>' +
+                '<span data-ua-pill></span>' +
+                '</button>';
+            }
+            html += '<p style="font-size:9px;color:rgba(255,255,255,0.3);margin:8px 2px 0;line-height:1.35">Aviso cuando otra persona modifica ese parte. Al abrir la app también avisa de lo que cambió mientras estaba cerrada.</p>' +
+              '<button id="__ua_notif_test__" type="button" style="width:100%;margin-top:10px;padding:9px 12px;border-radius:10px;cursor:pointer;border:1px solid rgba(59,130,246,0.5);background:rgba(59,130,246,0.15);color:#fff;font-size:12px;font-weight:800">🔔 Probar aviso ahora</button>';
+            sec.innerHTML = html;
+            scroll.appendChild(sec);
+            __UA_NOTIF_UI.forEach(function (it) {
+              __uaPintaSwitch(sec, it.clave);
+              var btn = sec.querySelector('[data-ua-notif="' + it.clave + '"]');
+              if (btn) btn.onclick = function (e) {
+                e.preventDefault(); e.stopPropagation();
+                var on = __uaNotifActivada(it.clave);
+                try { localStorage.setItem(__UA_NOTIF_KEYS[it.clave], on ? '0' : '1'); } catch (er) {}
+                if (!on) __uaPedirPermisoNotif(true); // al ACTIVAR, pedir permiso si falta
+                __uaPintaSwitch(sec, it.clave);
+                __uaPushSyncFlags(); // reflejar el check en el doc del token (push)
+              };
+            });
+            var testBtn = sec.querySelector('#__ua_notif_test__');
+            if (testBtn) testBtn.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __uaNotifPrueba(); };
+          } finally {
+            setTimeout(function () { __cntMutating = false; }, 50);
+          }
+        } catch (e) {}
+      }
+
+      // Lee el sello del doc del turno (del array en memoria que ya carga el bundle).
+      function __uaReadStamp(turno) {
+        try {
+          var info = __uaDocInfoTurno(turno);
+          if (info && typeof info.ultimaActServicio === 'number') return info.ultimaActServicio;
+        } catch (e) {}
+        return null;
+      }
+
+      // ── updateTime REAL del servidor (v1.7.3) ────────────────────────────────
+      // El sello 'ultimaActServicio' solo se escribe si ALGÚN dispositivo con
+      // versión nueva está abierto cuando ocurre la edición (el watcher). Si un
+      // compañero con versión ANTIGUA edita mientras nadie "mira", no se sella y
+      // el badge quedaba en "—". Firestore SÍ guarda en el servidor la fecha de
+      // la última escritura de cada doc (updateTime), la haga quien la haga y con
+      // la versión que sea — el SDK no la expone, pero la API REST sí. El badge
+      // muestra el MÁS RECIENTE de (sello en memoria, updateTime del servidor).
+      // Solo LECTURA (GET con field mask mínimo), cacheado 20 s por doc, y solo
+      // mientras se está en la pantalla de un servicio individual.
+      var __uaUpdCache = {}; // docId -> { ms, fetchedAt, startedAt, inflight }
+      function __uaFetchUpdateTime(docId) {
+        try {
+          if (!docId || typeof fetch !== 'function') return;
+          var c = __uaUpdCache[docId];
+          var now = Date.now();
+          // En vuelo: respetar, PERO con escape a los 45 s (un fetch colgado — radio
+          // móvil, suspensión — no debe bloquear el refresco para siempre).
+          if (c && c.inflight && (now - c.startedAt < 45000)) return;
+          if (c && !c.inflight && (now - c.fetchedAt < 20000)) return; // fresco
+          if (!c) c = __uaUpdCache[docId] = { ms: null, fetchedAt: 0, startedAt: 0, inflight: false };
+          c.inflight = true;
+          c.startedAt = now;
+          var url = 'https://firestore.googleapis.com/v1/projects/' + __UA_CFG.projectId +
+                    '/databases/(default)/documents/artifacts/' + __UA_APPID +
+                    '/public/data/servicios_diarios/' + encodeURIComponent(docId) +
+                    '?key=' + __UA_CFG.apiKey + '&mask.fieldPaths=turno';
+          fetch(url).then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+              c.inflight = false; c.fetchedAt = Date.now();
+              if (j && j.updateTime) {
+                var t = Date.parse(j.updateTime);
+                if (!isNaN(t)) c.ms = t;
+              }
+            })
+            .catch(function () { c.inflight = false; c.fetchedAt = Date.now(); }); // el TTL hace de backoff
+        } catch (e) {}
+      }
+
+      function __uaFormatFecha(ms) {
+        try {
+          return new Date(ms).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'medium' }); // medium = incluye segundos
+        } catch (e) { return ''; }
+      }
+
+      // Devuelve el array de turnos presentes en la pantalla por las cabeceras
+      // <th> colSpan>=5. 1 turno = pantalla individual; 3 = ESTADO COMPLETO.
+      function __uaTurnosEnPantalla() {
+        var encontrados = [];
+        try {
+          var ths = document.querySelectorAll('th');
+          for (var i = 0; i < ths.length; i++) {
+            if (ths[i].colSpan < 5) continue;
+            var raw = (ths[i].textContent || '').replace(/[^A-ZÁÉÍÓÚÜÑ]/g, '').toUpperCase();
+            if (raw.endsWith('NOCHE')) encontrados.push('NOCHE');
+            else if (raw.endsWith('URBANIZACIONES')) encontrados.push('URBANIZACIONES');
+            else if (raw.endsWith('TARDE')) encontrados.push('TARDE');
+          }
+        } catch (e) {}
+        return encontrados;
+      }
+
+      // ¿Pantalla de un servicio individual? Devuelve el turno o null (NO ESTADO COMPLETO).
+      function __uaTurnoPantallaIndividual() {
+        var t = __uaTurnosEnPantalla();
+        return (t.length === 1) ? t[0] : null;
+      }
+
+      // ¿Estamos en ESTADO COMPLETO? (los 3 turnos a la vez).
+      function __uaEsEstadoCompleto() {
+        return __uaTurnosEnPantalla().length >= 3;
+      }
+
+      // Muestra "ÚLTIMA ACT.: ..." en una línea PROPIA justo debajo de la cabecera
+      // de la sub-pantalla (camión + "SERVICIO X" + FECHA), en posición FIJA.
+      // Antes se anclaba "junto al texto SERVICIO" pero había DOS (barra de navegación
+      // y cabecera de sección) → el badge bailaba de sitio cada pasada. Ahora se ancla
+      // al ÚNICO input[type=date] (FECHA) → subimos a la fila de cabecera → insertamos
+      // una línea full-width inmediatamente debajo. Estable e idéntico en NOCHE/URB/TARDE.
+      function __uaInjectBadge() {
+        if (__AV_RAMA_G) return; // rama G: sin "ÚLTIMA ACT." en servicios (el de AVERÍAS es del bundle)
+        try {
+          var turno = __uaTurnoPantallaIndividual();
+          var badge = document.getElementById('__ua_badge__');
+          var line = document.getElementById('__ua_badge_line__');
+
+          // Fuera de un servicio individual: ocultar (no mostrar en ESTADO COMPLETO).
+          if (!turno) {
+            if (line) line.style.display = 'none';
+            return;
+          }
+
+          // Localizar la fila de cabecera por el input de fecha con label "FECHA:"
+          // (único y estable; mismo criterio que injectDateNav).
+          var subHeaderRow = null;
+          var inputs = document.querySelectorAll('input[type="date"]');
+          for (var i = 0; i < inputs.length; i++) {
+            var grp = inputs[i].parentNode;
+            if (!grp) continue;
+            var lab = grp.querySelector('label');
+            if (!lab || (lab.textContent || '').trim().toUpperCase() !== 'FECHA:') continue;
+            subHeaderRow = grp.parentNode; // la fila flex justify-between (camión + título + FECHA)
+            break;
+          }
+          if (!subHeaderRow || !subHeaderRow.parentNode) {
+            if (line) line.style.display = 'none';
+            return;
+          }
+
+          // Hora a mostrar: el MÁS RECIENTE de (sello 'ultimaActServicio' en memoria,
+          // updateTime real del servidor vía REST). Así se ve SIEMPRE que alguien
+          // modifique, aunque el que edita tenga versión antigua y nadie sellara.
+          // UNA sola lectura de fiber (__uaDocInfoTurno) da sello + docId.
+          var msMem = null, msRest = null;
+          try {
+            var infoDoc = __uaDocInfoTurno(turno);
+            if (infoDoc && typeof infoDoc.ultimaActServicio === 'number') msMem = infoDoc.ultimaActServicio;
+            if (infoDoc && infoDoc.id) {
+              __uaFetchUpdateTime(infoDoc.id); // throttled (20 s); actualiza la caché en 2º plano
+              var cch = __uaUpdCache[infoDoc.id];
+              if (cch && typeof cch.ms === 'number') msRest = cch.ms;
+            }
+          } catch (eR) {}
+          var ms = Math.max(msMem || 0, msRest || 0) || null;
+          var texto = ms ? ('ÚLTIMA ACT.: ' + __uaFormatFecha(ms)) : 'ÚLTIMA ACT.: —';
+          var parent = subHeaderRow.parentNode;
+
+          // ¿Hace falta tocar el DOM? Solo si cambia algo (idempotente → no agita el observer).
+          var necesitaCrear = !line || !badge;
+          var necesitaTexto = !badge || badge.textContent !== texto;
+          var malAnclado = line && (subHeaderRow.nextSibling !== line || line.parentNode !== parent);
+          var oculto = line && line.style.display === 'none';
+          if (!necesitaCrear && !necesitaTexto && !malAnclado && !oculto) return;
+
+          // Guard: el MutationObserver ignora cambios mientras __cntMutating=true.
+          __cntMutating = true;
+          try {
+            if (!line) {
+              line = document.createElement('div');
+              line.id = '__ua_badge_line__';
+              line.style.cssText = 'width:100%;box-sizing:border-box;padding:3px 8px;' +
+                'display:flex;justify-content:flex-start;align-items:center;' +
+                'background:#fff;border-bottom:1px solid #f3f4f6;';
+            }
+            if (!badge) {
+              badge = document.createElement('span');
+              badge.id = '__ua_badge__';
+              badge.style.cssText = 'display:inline-block;font-size:11px;font-weight:700;' +
+                'letter-spacing:0.04em;color:#92400e;background:#fef3c7;border:1px solid #fde68a;' +
+                'border-radius:6px;padding:2px 8px;white-space:nowrap;';
+            }
+            if (badge.parentNode !== line) line.appendChild(badge);
+            if (badge.textContent !== texto) badge.textContent = texto;
+            line.style.display = 'flex';
+            // Insertar la línea justo DESPUÉS de la cabecera y antes de la tabla.
+            if (subHeaderRow.nextSibling !== line || line.parentNode !== parent) {
+              parent.insertBefore(line, subHeaderRow.nextSibling);
+            }
+          } finally {
+            setTimeout(function () { __cntMutating = false; }, 50);
+          }
+        } catch (e) {}
+      }
+
+      // Compara los registros actuales del turno con la foto tomada al abrir el
+      // candado. Como Firestore actualiza el array en memoria con retardo (onSnapshot),
+      // reintenta varias veces tras el cierre. Si detecta cambio, sella UNA vez.
+      // En cuanto estamos en una pantalla de servicios (ya con la app montada),
+      // arrancamos el watcher en tiempo real UNA vez. El sellado ya NO depende del
+      // candado: lo hace el watcher al detectar cambios en los registros (de quien
+      // sea, desde cualquier dispositivo). Se llama desde runInjections.
+      function __uaPollCandado() {
+        if (__AV_RAMA_G) return; // rama G: sin watchers, sin permiso de notifs, sin push
+        try {
+          var hayServicios = !!__uaTurnoPantallaIndividual() || __uaEsEstadoCompleto();
+          // En cuanto la app está montada y en una pantalla de servicios, arrancamos
+          // AMBOS watchers (servicios + averías) y pedimos permiso de notificaciones.
+          // Una sola vez cada uno (flags __uaWatching/__uaWatchAver).
+          if (hayServicios) {
+            if (!__uaWatching) __uaStartWatcher();
+            if (!__uaWatchAver) __uaStartWatcherAverias();
+            __uaPedirPermisoNotif();
+            __uaPushRegistrar(); // registro FCM (push con la app cerrada, v1.9)
+          }
+        } catch (e) {}
       }
 
       function findMenuBackButton() {
@@ -714,34 +1495,49 @@
       }
 
       var __lastFitScreen = '';
-      var __lastFitHeight = 0;
-      var __fitPending = false;
-      function _triggerFit() {
-        if (__fitPending) return;
-        __fitPending = true;
-        setTimeout(function() {
-          __fitPending = false;
-          var eyeBtn = document.querySelector('button[title="Ajustar pantalla"]');
-          if (eyeBtn) { try { eyeBtn.click(); } catch(e) {} }
-        }, 300);
-      }
       function autoFitEyeView() {
         var label = getCurrentScreenLabel();
-        if (!label) { __lastFitScreen = ''; __lastFitHeight = 0; return; }
+        if (!label) { __lastFitScreen = ''; return; }
         var up = stripDiacritics(label.toUpperCase());
         var isTarget = up.indexOf('NOCHE') !== -1 ||
                        up.indexOf('URBAN') !== -1 ||
                        up.indexOf('TARDE') !== -1 ||
                        up.indexOf('ESTADO') !== -1;
-        if (!isTarget) { __lastFitScreen = ''; __lastFitHeight = 0; return; }
-        var table = document.querySelector('table');
-        var h = table ? table.scrollHeight : 0;
-        var screenChanged = (__lastFitScreen !== label);
-        var sizeChanged = (h !== __lastFitHeight && __lastFitHeight > 0);
-        if (!screenChanged && !sizeChanged) return;
+        if (!isTarget) { __lastFitScreen = ''; return; }
+        if (__lastFitScreen === label) return;
+        var eyeBtn = document.querySelector('button[title="Ajustar pantalla"]');
+        if (!eyeBtn) return;
         __lastFitScreen = label;
-        __lastFitHeight = h;
-        _triggerFit();
+        try { eyeBtn.click(); } catch (e) {}
+        // El ojo (bundle) calcula el zoom para que quepan todas las filas, pero la
+        // línea nueva "ÚLTIMA ACT." ocupa algo de alto y el cálculo se queda corto.
+        // Le restamos un 2% tras el clic (cuando el bundle ya aplicó su zoom).
+        setTimeout(__shaveEyeZoom, 80);
+        setTimeout(__shaveEyeZoom, 260);
+      }
+
+      // Resta un 2% al zoom del auto-fit (CSS `zoom` inline del wrapper de la tabla).
+      // Idempotente: marca el valor ya ajustado con data-eye-shaved; si el bundle
+      // re-aplica su zoom (resize/re-render), lo vuelve a reducir. Solo lee/escribe
+      // style.zoom (no childList → no dispara el MutationObserver en bucle) y nunca
+      // toca fibers. Solo actúa cuando hay zoom de ajuste activo (<1).
+      var __EYE_FACTOR = 0.98; // −2%
+      function __shaveEyeZoom() {
+        try {
+          var els = document.querySelectorAll('div.flex.flex-col.h-full[style*="zoom"]');
+          for (var i = 0; i < els.length; i++) {
+            var el = els[i];
+            var z = parseFloat(el.style.zoom);
+            if (!z || z >= 1) continue; // solo cuando está "ajustado" (zoom < 1)
+            var stamped = parseFloat(el.getAttribute('data-eye-shaved') || 'NaN');
+            // Re-reducir solo si el bundle re-aplicó un valor nuevo (no el nuestro).
+            if (isNaN(stamped) || Math.abs(z - stamped) > 0.0005) {
+              var nz = z * __EYE_FACTOR;
+              el.style.zoom = String(nz);
+              el.setAttribute('data-eye-shaved', String(nz));
+            }
+          }
+        } catch (e) {}
       }
 
       function fixTextoEditMode() {
@@ -822,8 +1618,17 @@
           var dispatch = zxFiber.memoizedState.next.next.next.queue.dispatch;
           var turnoActivo = zxFiber.memoizedState.next.next.next.memoizedState;
 
+          // ¿Está ESTE turno ya desbloqueado? Lo decidimos con la señal del DOM
+          // (real-time y fiable: hay <select> editables) Y/O el fiber. El fiber a
+          // veces va por detrás → si solo miráramos el fiber, al cerrar pediría
+          // contraseña de nuevo. Con el DOM, cerrar nunca pide contraseña.
+          var domTurno = null;
+          try { domTurno = __lkTurnoDesbloqueadoDOM(); } catch (eD) { domTurno = undefined; }
+          var yaDesbloqueado = (turnoActivo === turno) ||
+                               (typeof domTurno === 'string' && domTurno === turno);
+
           // Toggle: si ya está desbloqueado este turno, bloquear sin contraseña.
-          if (turnoActivo === turno) {
+          if (yaDesbloqueado) {
             dispatch(null);
             // Actualización optimista inmediata: poner todos los botones en rojo sin esperar a React
             var allLkBtns = document.querySelectorAll('[data-lock-btn]');
@@ -831,8 +1636,22 @@
               __lkStyleBtn(allLkBtns[bi], false);
               allLkBtns[bi].dataset.state = 'closed';
             }
-            setTimeout(__lkRefreshBtnStates, 300);
-            setTimeout(__lkRefreshBtnStates, 700);
+            // Ventana corta (~350ms) para que React desmonte los <select> de las
+            // celdas antes de que el detector DOM vuelva a leer. NO lanzamos un
+            // refresco DENTRO de la ventana (leería <select> aún sin desmontar y
+            // repintaría verde, peleando con el rojo optimista). Un único refresco
+            // de respaldo DESPUÉS de la ventana reconcilia con el estado real.
+            __lkOptimisticUntil = Date.now() + 350;
+            setTimeout(function(){ __lkRefreshBtnStates(true); }, 500);
+            return;
+          }
+
+          // Con el LÁPIZ de edición activo, abrir el candado SIN pedir clave (ya se
+          // autorizó al entrar en el modo edición con la clave del lápiz).
+          if (__avEditMode) {
+            try { dispatch(turno); } catch (e) {}
+            setTimeout(function(){ __lkRefreshBtnStates(true); }, 80);
+            setTimeout(function(){ __lkRefreshBtnStates(true); }, 300);
             return;
           }
 
@@ -861,8 +1680,8 @@
             if (inp.value === pw) {
               try { dispatch(turno); } catch(e) {}
               close();
-              setTimeout(__lkRefreshBtnStates, 80);
-              setTimeout(__lkRefreshBtnStates, 300);
+              setTimeout(function(){ __lkRefreshBtnStates(true); }, 80);
+              setTimeout(function(){ __lkRefreshBtnStates(true); }, 300);
             } else {
               err.style.visibility = 'visible';
               inp.value = '';
@@ -914,6 +1733,38 @@
         return null;
       }
 
+      // Variante ESTRICTA: distingue "no se pudo leer el fiber" (devuelve undefined)
+      // de "fiber encontrado y todo bloqueado" (devuelve null). Evita el parpadeo:
+      // si una pasada falla la lectura mid-render, NO repintamos los candados.
+      function __lkReadTurnoActivoStrict() {
+        try {
+          var sc = document.querySelector('[data-scroll-container]');
+          if (!sc) return undefined;
+          var fk = null;
+          var keys = Object.keys(sc);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
+          }
+          if (!fk) return undefined;
+          var node = sc[fk];
+          for (var depth = 0; depth < 20; depth++) {
+            node = node && node.return;
+            if (!node) break;
+            if (typeof node.type !== 'function') continue;
+            var h0 = node.memoizedState;
+            if (!h0) continue;
+            var h1 = h0.next, h2 = h1 && h1.next, h3 = h2 && h2.next;
+            if (h3 && h3.queue && typeof h3.queue.dispatch === 'function' &&
+                (h3.memoizedState === null || h3.memoizedState === 'NOCHE' ||
+                 h3.memoizedState === 'URBANIZACIONES' || h3.memoizedState === 'TARDE') &&
+                typeof h0.memoizedState === 'string' && h0.memoizedState.indexOf('-') !== -1) {
+              return h3.memoizedState; // string (turno abierto) o null (todo bloqueado)
+            }
+          }
+        } catch (e) {}
+        return undefined; // no se encontró el fiber → lectura no fiable
+      }
+
       function __lkStyleBtn(btn, isUnlocked) {
         if (isUnlocked) {
           btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;margin-left:6px;padding:5px 12px;border-radius:9999px;border:2px solid #22c55e;background:#dcfce7;color:#15803d;cursor:pointer;vertical-align:middle;line-height:0;transition:all 0.15s;';
@@ -954,41 +1805,468 @@
         return null;
       }
 
-      // Realiza la copia turnoFuente → turnoDestino en todas las filas visibles.
-      function __lkCopyTurno(fuente, destino) {
+      // Lee la fecha actual que muestra la app desde el fiber (h0 del componente Zx).
+      // Devuelve string "DD-MM-YYYY" (formato docId Firestore) o null.
+      function __lkReadFechaActual() {
         try {
-          // Verificar que el candado destino está abierto
-          var turnoActivo = __lkReadTurnoActivo();
-          if (turnoActivo !== destino) {
-            __lkShowAlert('Para copiar a ' + destino + ', primero desbloquea su candado.');
-            return false;
+          var sc = document.querySelector('[data-scroll-container]');
+          if (!sc) return null;
+          var fk = null;
+          var keys = Object.keys(sc);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
           }
+          if (!fk) return null;
+          var node = sc[fk];
+          for (var depth = 0; depth < 20; depth++) {
+            node = node && node.return;
+            if (!node) break;
+            if (typeof node.type !== 'function') continue;
+            var h0 = node.memoizedState;
+            if (!h0) continue;
+            var h1 = h0.next, h2 = h1 && h1.next, h3 = h2 && h2.next;
+            if (h3 && h3.queue && typeof h3.queue.dispatch === 'function' &&
+                (h3.memoizedState === null || h3.memoizedState === 'NOCHE' ||
+                 h3.memoizedState === 'URBANIZACIONES' || h3.memoizedState === 'TARDE') &&
+                typeof h0.memoizedState === 'string' && h0.memoizedState.indexOf('-') !== -1) {
+              return h0.memoizedState; // puede ser "YYYY-MM-DD" o "DD-MM-YYYY"
+            }
+          }
+        } catch (e) {}
+        return null;
+      }
 
+      // Lee el array de servicios cargados en memoria subiendo por el fiber desde [data-scroll-container].
+      // Busca cualquier nodo cuyo estado contenga un Array con elementos {turno, fechaStr}.
+      function __lkReadServicios() {
+        try {
+          var sc = document.querySelector('[data-scroll-container]');
+          if (!sc) return null;
+          var fk = null;
+          var keys = Object.keys(sc);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
+          }
+          if (!fk) return null;
+          var node = sc[fk];
+          for (var depth = 0; depth < 60; depth++) {
+            if (!node) break;
+            var ms = node.memoizedState;
+            // Recorrer todos los hooks del nodo buscando uno que sea Array de servicios
+            var h = ms;
+            for (var hi = 0; hi < 20 && h; hi++) {
+              var v = h.memoizedState;
+              if (Array.isArray(v) && v.length > 0 && v[0] && typeof v[0].turno === 'string' && typeof v[0].fechaStr === 'string') {
+                return v;
+              }
+              h = h.next;
+            }
+            node = node.return;
+          }
+        } catch (e) {}
+        return null;
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
+      // Motor robusto de escritura por fiber (copia / vaciado).
+      //
+      // Problema que resuelve: las versiones anteriores hacían UNA pasada y
+      // disparaban 4×Nfilas escrituras de golpe; React las batchea/re-renderiza
+      // y algunas se pisaban → había que pulsar 2 veces y a veces se saltaba una
+      // fila. Este motor ESCRIBE, VERIFICA fila a fila contra el objetivo y
+      // REESCRIBE solo lo que aún no coincide, repitiendo hasta converger.
+      //
+      //   destino : 'NOCHE' | 'URBANIZACIONES' | 'TARDE'
+      //   planFn(props) : objetivo {estado,cargaNo,cargaSiTipo,otros} de esa
+      //                   fila, o null si la fila no participa.
+      //   onDone(aplicadas, objetivo) : aviso final.
+      var __LK_FIELDS = ['estado', 'cargaNo', 'cargaSiTipo', 'otros'];
+      function __lkFieldDefault(field) {
+        return field === 'cargaNo' ? false : (field === 'estado' ? null : '');
+      }
+      function __lkNorm(v, field) { return (typeof v === 'undefined') ? __lkFieldDefault(field) : v; }
+      function __lkPick4(o) {
+        var r = {};
+        for (var i = 0; i < __LK_FIELDS.length; i++) r[__LK_FIELDS[i]] = __lkNorm(o[__LK_FIELDS[i]], __LK_FIELDS[i]);
+        return r;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // MOTOR DE ESCRITURA DIRECTA A FIRESTORE (una sola operación atómica).
+      //
+      // POR QUÉ (bug "0 fiable" de la copia de averiados en escritorio):
+      //   El motor antiguo (abajo, __lkApplyByFiberBundle) llamaba al handler del
+      //   bundle `onUpdateN(vid, campo, valor)` 4 veces por fila. Ese handler, si
+      //   el documento del turno destino AÚN NO EXISTE, hace un setDoc que
+      //   SOBREESCRIBE EL DOCUMENTO ENTERO (todos los vehículos en blanco menos el
+      //   campo que escribe). Como las 4×N llamadas son async y se disparan casi a
+      //   la vez, se PISAN entre ellas: gana el último setDoc y solo queda 1 campo
+      //   puesto → "a veces copia algo, a veces no, se deja datos". (Cuando el doc
+      //   YA existe, el bundle usa updateDoc granular y por eso a veces sí iba.)
+      //
+      // SOLUCIÓN: no tocar el handler del bundle. Construimos los registros
+      //   objetivo y los escribimos DE UNA SOLA VEZ con nuestra app Firebase
+      //   secundaria (__uaDb, la de "ÚLTIMA ACT."):
+      //     · doc EXISTE  → un único update() con rutas punteadas
+      //                     registros.<vid>.<campo> (granular, no pisa nada).
+      //     · doc NO existe → un único set(..., {merge:true}) creándolo con
+      //                     turno/fechaStr/timestamp/vehiculosOrden + registros.
+      //   Una sola escritura ⇒ imposible que se pisen ⇒ 100% fiable. El bundle lo
+      //   recoge por su onSnapshot y repinta las celdas. Si Firebase no está
+      //   disponible, cae al motor antiguo por fibers (nunca peor que hoy).
+      //
+      //   destino : 'NOCHE' | 'URBANIZACIONES' | 'TARDE'
+      //   planFn(props) : objetivo {estado,cargaNo,cargaSiTipo,otros} de esa
+      //                   fila, o null si la fila no participa.
+      //   onDone(aplicadas, objetivo) : aviso final.
+      // ═══════════════════════════════════════════════════════════════════════
+
+      // Clave de fecha comparable (numérica, sin ceros a la izquierda) a partir de
+      // "DD/MM/YYYY", "D/M/YYYY", "DD-MM-YYYY" o "YYYY-MM-DD". Devuelve "D-M-YYYY".
+      function __lkFechaKey(s) {
+        if (!s) return null;
+        var p = String(s).split(/[\/\-]/);
+        if (p.length !== 3) return null;
+        if (p[0].length === 4) return parseInt(p[2], 10) + '-' + parseInt(p[1], 10) + '-' + p[0]; // YYYY-MM-DD
+        return parseInt(p[0], 10) + '-' + parseInt(p[1], 10) + '-' + p[2];                         // DD-MM-YYYY | D/M/YYYY
+      }
+      // Fecha actual como "DD/MM/YYYY" (con ceros), formato del campo fechaStr.
+      function __lkFechaStrActual() {
+        var f = __lkReadFechaActual();
+        if (!f) return null;
+        var p = String(f).split('-');
+        if (p.length !== 3) return null;
+        function pad(x) { x = String(x); return x.length < 2 ? '0' + x : x; }
+        if (p[0].length === 4) return pad(p[2]) + '/' + pad(p[1]) + '/' + p[0]; // YYYY-MM-DD
+        return pad(p[0]) + '/' + pad(p[1]) + '/' + p[2];                        // DD-MM-YYYY
+      }
+      // Info del doc destino para el turno+fecha actuales.
+      // Devuelve {id, fechaStr, exists, vehiculosOrden}. Si no está en memoria,
+      // compone el id estándar y usa allVids (orden del DOM) como vehiculosOrden.
+      function __lkDestinoDocInfo(destino, allVids) {
+        var fStr = __lkFechaStrActual();
+        var info = { id: null, fechaStr: fStr, exists: false, vehiculosOrden: allVids || [] };
+        try {
+          var servicios = __lkReadServicios();
+          var claveHoy = __lkFechaKey(fStr);
+          if (servicios && claveHoy) {
+            var ordenMismoDia = null;   // orden canónico de cualquier turno del MISMO día
+            for (var i = 0; i < servicios.length; i++) {
+              var s = servicios[i];
+              if (!s || __lkFechaKey(s.fechaStr) !== claveHoy) continue;
+              if (!ordenMismoDia && Array.isArray(s.vehiculosOrden) && s.vehiculosOrden.length) ordenMismoDia = s.vehiculosOrden;
+              if (s.turno === destino) {
+                info.id = s.id;
+                info.fechaStr = s.fechaStr;
+                info.exists = true;
+                if (Array.isArray(s.vehiculosOrden) && s.vehiculosOrden.length) info.vehiculosOrden = s.vehiculosOrden;
+                break;
+              }
+            }
+            // Si hay que CREAR el doc destino, usar el orden de un doc del mismo día
+            // (como hace el bundle: toma vehiculosOrden de URB/TARDE de esa fecha),
+            // y solo como último recurso el orden del DOM (allVids).
+            if (!info.exists && ordenMismoDia) info.vehiculosOrden = ordenMismoDia;
+          }
+        } catch (e) {}
+        if (!info.id) {
+          if (!fStr) return info;   // sin fecha fiable → id null → el llamador cae al motor antiguo
+          info.id = destino.replace(/\s+/g, '_') + '_' + fStr.replace(/\//g, '-');
+          info.exists = false;
+        }
+        return info;
+      }
+      // Referencia al doc de servicios con NUESTRA app secundaria (misma ruta que el watcher).
+      function __lkServicioDocRef(db, id) {
+        return db.collection('artifacts').doc(__UA_APPID)
+                 .collection('public').doc('data')
+                 .collection('servicios_diarios').doc(id);
+      }
+      function __lkRegNorm(t) {
+        return {
+          estado:     (t && t.estado != null) ? t.estado : null,
+          cargaNo:    !!(t && t.cargaNo),
+          cargaSiTipo:(t && t.cargaSiTipo != null) ? t.cargaSiTipo : '',
+          otros:      (t && t.otros != null) ? t.otros : ''
+        };
+      }
+      // Crea el doc destino (no existía) con set(merge): metadatos + solo los
+      // vehículos objetivo (los demás se pintan en blanco por ausencia de registro).
+      function __lkWriteCreate(ref, destino, info, targets, onOk, onFail) {
+        try {
+          var regs = {}, vids = Object.keys(targets);
+          for (var i = 0; i < vids.length; i++) regs[vids[i]] = __lkRegNorm(targets[vids[i]]);
+          var payload = { turno: destino, fechaStr: info.fechaStr, timestamp: Date.now(), registros: regs };
+          if (Array.isArray(info.vehiculosOrden) && info.vehiculosOrden.length) payload.vehiculosOrden = info.vehiculosOrden;
+          ref.set(payload, { merge: true }).then(function () { if (onOk) onOk(); }).catch(function (e) { if (onFail) onFail(e); });
+        } catch (e) { if (onFail) onFail(e); }
+      }
+      // Escribe los registros objetivo en el turno destino de UNA sola vez.
+      function __lkWriteRegistrosDirect(destino, targets, allVids, onOk, onFail) {
+        try {
+          var info = __lkDestinoDocInfo(destino, allVids);
+          if (!info.id) { if (onFail) onFail(new Error('sin id de doc')); return; }
+          __uaEnsureFirebase().then(function () {
+            var db = __uaInitFirebase();
+            if (!db) { if (onFail) onFail(new Error('sin firestore')); return; }
+            var ref = __lkServicioDocRef(db, info.id);
+            var vids = Object.keys(targets);
+            if (info.exists) {
+              // Doc existe → un único update granular (rutas punteadas). No pisa a nadie.
+              var upd = {};
+              for (var i = 0; i < vids.length; i++) {
+                var vid = vids[i], r = __lkRegNorm(targets[vid]);
+                upd['registros.' + vid + '.estado'] = r.estado;
+                upd['registros.' + vid + '.cargaNo'] = r.cargaNo;
+                upd['registros.' + vid + '.cargaSiTipo'] = r.cargaSiTipo;
+                upd['registros.' + vid + '.otros'] = r.otros;
+              }
+              ref.update(upd)
+                 .then(function () { if (onOk) onOk(); })
+                 .catch(function () { __lkWriteCreate(ref, destino, info, targets, onOk, onFail); }); // el doc pudo desaparecer → crearlo
+            } else {
+              __lkWriteCreate(ref, destino, info, targets, onOk, onFail);
+            }
+          }).catch(function (e) { if (onFail) onFail(e); });
+        } catch (e) { if (onFail) onFail(e); }
+      }
+
+      // Indicador "Copiando…" NO bloqueante (pointer-events:none) para dar feedback
+      // instantáneo al pulsar, ya que la confirmación real ("Copiados N") ahora llega
+      // cuando Firestore confirma la escritura (con conexión lenta, ~1-2 s). Interno
+      // try/catch → nunca rompe la copia aunque el DOM no esté disponible.
+      function __lkShowBusy(msg) {
+        try {
+          if (!document.getElementById('__lk_busy_style__')) {
+            var st = document.createElement('style'); st.id = '__lk_busy_style__';
+            st.textContent = '@keyframes __lkspin{to{transform:rotate(360deg)}}';
+            document.head.appendChild(st);
+          }
+          var d = document.getElementById('__lk_busy__');
+          if (!d) {
+            d = document.createElement('div');
+            d.id = '__lk_busy__';
+            d.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9998;pointer-events:none;';
+            d.innerHTML = '<div style="background:#fff;border-radius:14px;padding:16px 22px;font-size:14px;font-weight:bold;color:#1f2937;box-shadow:0 20px 40px rgba(0,0,0,0.3);display:flex;align-items:center;gap:12px">' +
+              '<span style="width:18px;height:18px;border:3px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;display:inline-block;animation:__lkspin 0.8s linear infinite"></span>' +
+              '<span id="__lk_busy_txt__"></span></div>';
+            document.body.appendChild(d);
+          }
+          var t = document.getElementById('__lk_busy_txt__'); if (t) t.textContent = msg || 'Guardando…';
+          d.style.display = 'block';
+        } catch (e) {}
+      }
+      function __lkHideBusy() {
+        try { var d = document.getElementById('__lk_busy__'); if (d) d.style.display = 'none'; } catch (e) {}
+      }
+
+      function __lkApplyByFiber(destino, planFn, onDone) {
+        var datKey = destino === 'NOCHE' ? 'nDatos' : (destino === 'URBANIZACIONES' ? 'uDatos' : 'tDatos');
+        try {
           var trs = document.querySelectorAll('tbody tr');
-          var count = 0;
-          var fields = ['estado', 'cargaNo', 'cargaSiTipo', 'otros'];
-          var srcKey = fuente === 'NOCHE' ? 'nDatos' : 'uDatos';
-          var updKey = destino === 'URBANIZACIONES' ? 'onUpdateU' : 'onUpdateT';
-
+          var vistos = {}, allVids = [], targets = {};
+          var objetivo = 0, difieren = 0;
           for (var i = 0; i < trs.length; i++) {
             var props = __lkReadRowFiber(trs[i]);
             if (!props) continue;
-            var src = props[srcKey];
-            var update = props[updKey];
-            if (!src || typeof update !== 'function') continue;
-            for (var f = 0; f < fields.length; f++) {
-              var field = fields[f];
-              var val = src[field];
-              // Pasar todos los campos (incluso null/false/"") para sobreescribir el destino
-              if (typeof val === 'undefined') val = (field === 'cargaNo' ? false : (field === 'estado' ? null : ''));
-              try { update(props.vehiculoId, field, val); } catch (e) {}
+            var vid = String(props.vehiculoId);
+            if (vistos[vid]) continue;          // misma fila puede repetirse en el DOM
+            vistos[vid] = 1;
+            allVids.push(vid);                  // orden real (para vehiculosOrden si hay que crear el doc)
+
+            var plan = null;
+            try { plan = planFn(props); } catch (e) { plan = null; }
+            if (!plan) continue;                // esta fila no participa
+            objetivo++;
+
+            // ¿El destino ya coincide con el objetivo? (para no reescribir de más)
+            var cur = props[datKey] || {};
+            var igual = true;
+            for (var f = 0; f < __LK_FIELDS.length; f++) {
+              if (__lkNorm(cur[__LK_FIELDS[f]], __LK_FIELDS[f]) !== __lkNorm(plan[__LK_FIELDS[f]], __LK_FIELDS[f])) { igual = false; break; }
             }
-            count++;
+            if (!igual) { targets[vid] = __lkPick4(plan); difieren++; }
           }
-          return count;
+
+          if (objetivo === 0) { try { onDone(0, 0); } catch (e) {} return; }
+          if (difieren === 0) { try { onDone(objetivo, objetivo); } catch (e) {} return; } // ya está todo copiado
+
+          // Feedback instantáneo (la confirmación real llega al confirmar Firestore).
+          __lkShowBusy('Copiando…');
+          var __settled = false;
+          var __to = setTimeout(function () {
+            if (__settled) return; __settled = true;
+            __lkHideBusy();
+            // Con conexión muy lenta/caída la escritura sigue encolada y se aplicará
+            // al reconectar; avisamos honestamente en vez de dejar el spinner colgado.
+            __lkShowAlert('La copia se está guardando. Si la conexión es lenta, se aplicará al reconectar — comprueba en unos segundos.');
+          }, 12000);
+
+          // Una sola escritura atómica. Si va bien, TODO el objetivo queda aplicado.
+          __lkWriteRegistrosDirect(destino, targets, allVids,
+            function () { if (__settled) return; __settled = true; clearTimeout(__to); __lkHideBusy(); try { onDone(objetivo, objetivo); } catch (e) {} },
+            function () { if (__settled) return; __settled = true; clearTimeout(__to); __lkHideBusy(); try { __lkApplyByFiberBundle(destino, planFn, onDone); } catch (e) {} } // Firebase caído → motor antiguo
+          );
         } catch (e) {
-          return false;
+          try { __lkHideBusy(); } catch (e3) {}
+          try { __lkApplyByFiberBundle(destino, planFn, onDone); } catch (e2) {}
         }
+      }
+
+      // Motor ANTIGUO por fibers (llama a onUpdateX del bundle, verifica y reintenta).
+      // Se conserva SOLO como último recurso si la escritura directa a Firestore no
+      // puede ejecutarse (Firebase secundario no carga). Puede ser poco fiable con
+      // documentos aún inexistentes (ver explicación arriba), pero nunca es peor que
+      // el comportamiento anterior.
+      function __lkApplyByFiberBundle(destino, planFn, onDone) {
+        var updKey = destino === 'NOCHE' ? 'onUpdateN' : (destino === 'URBANIZACIONES' ? 'onUpdateU' : 'onUpdateT');
+        var datKey = destino === 'NOCHE' ? 'nDatos'   : (destino === 'URBANIZACIONES' ? 'uDatos'    : 'tDatos');
+
+        function pass(intento) {
+          try {
+            var trs = document.querySelectorAll('tbody tr');
+            var vistos = {};
+            var objetivo = 0, coinciden = 0, pendientes = 0;
+            for (var i = 0; i < trs.length; i++) {
+              var props = __lkReadRowFiber(trs[i]);
+              if (!props) continue;
+              var update = props[updKey];
+              if (typeof update !== 'function') continue;
+              var vid = String(props.vehiculoId);
+              if (vistos[vid]) continue;        // misma fila puede repetirse en el DOM
+
+              var plan = null;
+              try { plan = planFn(props); } catch (e) { plan = null; }
+              if (!plan) continue;              // esta fila no participa
+              vistos[vid] = 1;
+              objetivo++;
+
+              // ¿El destino ya coincide con el objetivo?
+              var cur = props[datKey] || {};
+              var igual = true;
+              for (var f = 0; f < __LK_FIELDS.length; f++) {
+                if (__lkNorm(cur[__LK_FIELDS[f]], __LK_FIELDS[f]) !== __lkNorm(plan[__LK_FIELDS[f]], __LK_FIELDS[f])) { igual = false; break; }
+              }
+              if (igual) { coinciden++; continue; }
+
+              // Aún no coincide → (re)escribir los 4 campos.
+              for (var g = 0; g < __LK_FIELDS.length; g++) {
+                try { update(props.vehiculoId, __LK_FIELDS[g], __lkNorm(plan[__LK_FIELDS[g]], __LK_FIELDS[g])); } catch (e) {}
+              }
+              pendientes++;
+            }
+
+            // Aún quedan filas sin cuajar → otra pasada tras dejar respirar a React.
+            if (pendientes > 0 && intento < 8) {
+              setTimeout(function() { pass(intento + 1); }, 160);
+              return;
+            }
+            try { onDone(coinciden, objetivo); } catch (e) {}
+          } catch (e) {}
+        }
+        pass(0);
+      }
+
+      // Resuelve el doc de TARDE de ayer (reintentando si aún se está cargando)
+      // y lanza la copia hacia NOCHE. soloAveriados=true → solo estado === 'A'.
+      function __lkResolveTardeAyer(soloAveriados, intento) {
+        try {
+          var fechaRaw = __lkReadFechaActual();
+          if (!fechaRaw) { __lkShowAlert('No se pudo leer la fecha actual.'); return; }
+          var parts = fechaRaw.split('-');
+          var ayerDate;
+          if (parts[0].length === 4) {
+            ayerDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]) - 1);
+          } else {
+            ayerDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]) - 1);
+          }
+          var dd = String(ayerDate.getDate()).padStart(2, '0');
+          var mm = String(ayerDate.getMonth() + 1).padStart(2, '0');
+          var yyyy = ayerDate.getFullYear();
+          var etq = dd + '/' + mm + '/' + yyyy;
+          var f1 = dd + '/' + mm + '/' + yyyy;                                                  // "18/05/2026"
+          var f2 = String(ayerDate.getDate()) + '/' + String(ayerDate.getMonth() + 1) + '/' + yyyy; // "18/5/2026"
+
+          var servicios = __lkReadServicios();
+          var docTarde = null;
+          if (servicios) {
+            for (var i = 0; i < servicios.length; i++) {
+              var sv = servicios[i];
+              if (sv.turno === 'TARDE' && (sv.fechaStr === f1 || sv.fechaStr === f2)) { docTarde = sv; break; }
+            }
+          }
+          if (!docTarde || !docTarde.registros) {
+            // Puede que los datos de ayer aún se estén cargando en memoria: reintentar.
+            if (intento < 6) { setTimeout(function() { __lkResolveTardeAyer(soloAveriados, intento + 1); }, 200); return; }
+            __lkShowAlert('No hay datos de TARDE del ' + etq + '.');
+            return;
+          }
+
+          var regs = docTarde.registros;
+          __lkApplyByFiber('NOCHE',
+            function(props) {
+              var r = regs[String(props.vehiculoId)];
+              if (!r) return null;
+              if (soloAveriados && r.estado !== 'A') return null;
+              return __lkPick4(r);
+            },
+            function(aplicadas, objetivo) {
+              if (objetivo === 0) {
+                __lkShowAlert(soloAveriados
+                  ? ('No se encontraron averiados en TARDE del ' + etq + '.')
+                  : ('No hay registros de TARDE del ' + etq + ' que copiar.'));
+              } else if (aplicadas >= objetivo) {
+                __lkShowAlert('Copiados ' + objetivo + (soloAveriados ? ' averiados' : ' registros') + ' de TARDE (' + etq + ') a NOCHE.');
+              } else {
+                __lkShowAlert('Copiados ' + aplicadas + ' de ' + objetivo + (soloAveriados ? ' averiados' : ' registros') + '. Vuelve a pulsar para completar.');
+              }
+            }
+          );
+        } catch (e) {}
+      }
+
+      // Copia TODA la TARDE del día anterior a NOCHE (botón azul en NOCHE).
+      function __lkCopyTardeAyer(destino) {
+        try {
+          if (__lkReadTurnoActivo() !== 'NOCHE') {
+            __lkShowAlert('Para copiar a NOCHE, primero desbloquea su candado.');
+            return;
+          }
+          __lkResolveTardeAyer(false, 0);
+        } catch (e) {}
+      }
+
+      // Copia SOLO los averiados (estado === 'A') de TARDE del día anterior a NOCHE.
+      function __lkCopyAveriadosAyer() {
+        try {
+          if (__lkReadTurnoActivo() !== 'NOCHE') {
+            __lkShowAlert('Para copiar a NOCHE, primero desbloquea su candado.');
+            return;
+          }
+          __lkResolveTardeAyer(true, 0);
+        } catch (e) {}
+      }
+
+      // Copia el turno anterior del MISMO día (URBANIZACIONES←NOCHE, TARDE←URBANIZACIONES).
+      function __lkCopyTurno(fuente, destino) {
+        try {
+          if (__lkReadTurnoActivo() !== destino) {
+            __lkShowAlert('Para copiar a ' + destino + ', primero desbloquea su candado.');
+            return;
+          }
+          var srcKey = fuente === 'NOCHE' ? 'nDatos' : (fuente === 'URBANIZACIONES' ? 'uDatos' : 'tDatos');
+          __lkApplyByFiber(destino,
+            function(props) {
+              var s = props[srcKey];
+              return s ? __lkPick4(s) : null;
+            },
+            function(aplicadas, objetivo) {
+              if (objetivo === 0) __lkShowAlert('No se encontraron filas para copiar.');
+              else if (aplicadas >= objetivo) __lkShowAlert('Copiados ' + objetivo + ' registros de ' + fuente + ' a ' + destino + '.');
+              else __lkShowAlert('Copiados ' + aplicadas + ' de ' + objetivo + ' registros. Vuelve a pulsar para completar.');
+            }
+          );
+        } catch (e) {}
       }
 
       function __lkShowAlert(msg) {
@@ -1027,10 +2305,13 @@
         document.getElementById('__lk_copy_no__').onclick = close;
         document.getElementById('__lk_copy_yes__').onclick = function() {
           close();
-          var res = __lkCopyTurno(fuente, destino);
-          if (res === false) return; // Alerta ya mostrada
-          if (res === 0) __lkShowAlert('No se encontraron filas para copiar.');
-          else __lkShowAlert('Copiados ' + res + ' registros de ' + fuente + ' a ' + destino + '.');
+          if (fuente === 'TARDE' && destino === 'NOCHE') {
+            // Copia asíncrona desde Firestore (día anterior)
+            __lkCopyTardeAyer(destino);
+          } else {
+            // El aviso lo muestra __lkCopyTurno al converger (escribe en varias pasadas).
+            __lkCopyTurno(fuente, destino);
+          }
         };
       }
 
@@ -1039,35 +2320,58 @@
         btn.innerHTML = __SVG_COPY;
       }
 
+      // Botón naranja "copia averiados del día anterior" (solo para NOCHE)
+      // OJO: la letra "A" se renderiza vía CSS pseudo-elemento ::after en el <style> del head,
+      // así NO contamina th.textContent (rompía injectContadores).
+      function __lkStyleCopyAvBtn(btn) {
+        btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;margin-left:6px;padding:5px 12px;border-radius:9999px;border:2px solid #f97316;background:#ffedd5;color:#c2410c;cursor:pointer;vertical-align:middle;line-height:0;transition:all 0.15s;gap:2px;';
+        btn.innerHTML = __SVG_COPY;
+      }
+
+      function __lkShowCopyAvConfirm() {
+        var existing = document.getElementById('__lk_copyav_modal__');
+        if (existing) existing.parentNode.removeChild(existing);
+        var modal = document.createElement('div');
+        modal.id = '__lk_copyav_modal__';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        modal.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:400px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3);text-align:center">' +
+          '<h3 style="font-size:18px;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 14px;color:#c2410c">COPIAR AVERIADOS</h3>' +
+          '<p style="font-size:13px;color:#4b5563;margin:0 0 20px;line-height:1.4">¿Desea copiar <b style="color:#c2410c">SOLO los averiados</b> de<br/><b style="color:#1f2937">TARDE del día anterior</b> a <b style="color:#1f2937">NOCHE</b>?</p>' +
+          '<div style="display:flex;gap:12px">' +
+          '<button id="__lk_copyav_no__" type="button" style="flex:1;background:#fee2e2;border:2px solid #ef4444;color:#dc2626;border-radius:10px;padding:14px;font-weight:bold;cursor:pointer;font-size:18px">✕</button>' +
+          '<button id="__lk_copyav_yes__" type="button" style="flex:1;background:#dcfce7;border:2px solid #22c55e;color:#15803d;border-radius:10px;padding:14px;font-weight:bold;cursor:pointer;font-size:18px">✓</button>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+        function close() { try { document.body.removeChild(modal); } catch (e) {} }
+        document.getElementById('__lk_copyav_no__').onclick = close;
+        document.getElementById('__lk_copyav_yes__').onclick = function() {
+          close();
+          __lkCopyAveriadosAyer();
+        };
+      }
+
       function __lkStyleTrashBtn(btn) {
         btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;margin-left:6px;padding:5px 12px;border-radius:9999px;border:2px solid #a855f7;background:#f3e8ff;color:#7e22ce;cursor:pointer;vertical-align:middle;line-height:0;transition:all 0.15s;';
         btn.innerHTML = __SVG_TRASH;
       }
 
-      // Vacía todos los registros del turno destino.
+      // Vacía todos los registros del turno destino (con verificación + reintentos).
       function __lkClearTurno(destino) {
         try {
-          var turnoActivo = __lkReadTurnoActivo();
-          if (turnoActivo !== destino) {
+          if (__lkReadTurnoActivo() !== destino) {
             __lkShowAlert('Para vaciar ' + destino + ', primero desbloquea su candado.');
-            return false;
+            return;
           }
-          var trs = document.querySelectorAll('tbody tr');
-          var count = 0;
-          var updKey = destino === 'NOCHE' ? 'onUpdateN' : (destino === 'URBANIZACIONES' ? 'onUpdateU' : 'onUpdateT');
-          var empty = { estado: null, cargaNo: false, cargaSiTipo: '', otros: '' };
-          for (var i = 0; i < trs.length; i++) {
-            var props = __lkReadRowFiber(trs[i]);
-            if (!props) continue;
-            var update = props[updKey];
-            if (typeof update !== 'function') continue;
-            for (var f in empty) {
-              try { update(props.vehiculoId, f, empty[f]); } catch (e) {}
+          __lkApplyByFiber(destino,
+            function(props) { return { estado: null, cargaNo: false, cargaSiTipo: '', otros: '' }; },
+            function(aplicadas, objetivo) {
+              if (objetivo === 0) __lkShowAlert('No se encontraron filas para vaciar.');
+              else if (aplicadas >= objetivo) __lkShowAlert('Vaciados ' + objetivo + ' registros de ' + destino + '.');
+              else __lkShowAlert('Vaciados ' + aplicadas + ' de ' + objetivo + ' registros. Vuelve a pulsar para completar.');
             }
-            count++;
-          }
-          return count;
-        } catch (e) { return false; }
+          );
+        } catch (e) {}
       }
 
       function __lkShowClearConfirm(destino) {
@@ -1118,10 +2422,8 @@
         function tryClear() {
           if (inp.value === pw) {
             close();
-            var res = __lkClearTurno(destino);
-            if (res === false) return;
-            if (res === 0) __lkShowAlert('No se encontraron filas para vaciar.');
-            else __lkShowAlert('Vaciados ' + res + ' registros de ' + destino + '.');
+            // El aviso lo muestra __lkClearTurno al converger (varias pasadas).
+            __lkClearTurno(destino);
           } else {
             err.style.visibility = 'visible';
             inp.value = '';
@@ -1168,18 +2470,18 @@
               e.preventDefault();
               e.stopPropagation();
               __lkOnClick(turno, PASSWORDS[turno]);
-              setTimeout(__lkRefreshBtnStates, 120);
+              setTimeout(function(){ __lkRefreshBtnStates(true); }, 120);
             };
             th.appendChild(btn);
           }
 
-          // Botón de copia solo en URB y TARDE
-          if (turno !== 'NOCHE' && !th.querySelector('[data-copy-btn]')) {
+          // Botón de copia en los tres turnos (NOCHE copia desde TARDE del día anterior)
+          if (!th.querySelector('[data-copy-btn]')) {
             var cbtn = document.createElement('button');
             cbtn.setAttribute('data-copy-btn', turno);
             cbtn.type = 'button';
             __lkStyleCopyBtn(cbtn);
-            var fuente = (turno === 'URBANIZACIONES') ? 'NOCHE' : 'URBANIZACIONES';
+            var fuente = (turno === 'NOCHE') ? 'TARDE' : (turno === 'URBANIZACIONES') ? 'NOCHE' : 'URBANIZACIONES';
             cbtn.title = 'Copiar datos de ' + fuente;
             (function(f, d) {
               cbtn.onclick = function(e) {
@@ -1189,6 +2491,21 @@
               };
             })(fuente, turno);
             th.appendChild(cbtn);
+          }
+
+          // Botón naranja "copiar AVERIADOS del día anterior" — solo NOCHE
+          if (turno === 'NOCHE' && !th.querySelector('[data-copyav-btn]')) {
+            var cavbtn = document.createElement('button');
+            cavbtn.setAttribute('data-copyav-btn', turno);
+            cavbtn.type = 'button';
+            __lkStyleCopyAvBtn(cavbtn);
+            cavbtn.title = 'Copiar SOLO averiados de TARDE del día anterior';
+            cavbtn.onclick = function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              __lkShowCopyAvConfirm();
+            };
+            th.appendChild(cavbtn);
           }
 
           // Botón papelera (vaciar) en los tres turnos
@@ -1209,13 +2526,81 @@
           }
         });
 
-        // Si acabamos de crear botones, leer fiber una vez para sincronizar
-        if (missingAny) __lkRefreshBtnStates();
+        // Sincronizar el estado visual de los candados con el estado REAL del
+        // fiber en CADA pasada (no solo al crearlos). Antes solo se refrescaba al
+        // crear los botones y tras los clicks (timeouts 80/300/700ms); si React
+        // tardaba más, el candado se quedaba en rojo aunque estuviera desbloqueado.
+        // Es idempotente (solo reescribe el botón si su estado cambió) y solo lee
+        // el fiber (seguro). Como injectEstadoLocks se llama cada pasada, el color
+        // del candado ahora se actualiza casi en tiempo real.
+        __lkRefreshBtnStates();
       }
 
-      function __lkRefreshBtnStates() {
+      // Ventana de actualización optimista: tras pulsar el candado, dejamos ~900ms
+      // para que React asiente su estado sin que el refresco automático pelee con
+      // la pintura optimista (evita parpadeo verde→rojo al bloquear).
+      var __lkOptimisticUntil = 0;
+
+      // Detección REAL-TIME del turno desbloqueado por el DOM (no por el fiber).
+      // Cuando un turno está desbloqueado, el bundle pinta <select> editables en
+      // sus celdas SÍ/TIPO y OTROS; bloqueado solo pinta texto estático. Como esto
+      // es post-render, refleja el estado real al instante (el fiber iba por detrás
+      // → el candado se quedaba en rojo hasta tocar una celda). Devolvemos el turno
+      // desbloqueado (string) o null si ninguno lo está. Reutiliza turnoDeX por X.
+      function __lkTurnoDesbloqueadoDOM() {
         try {
-          var turnoActivo = __lkReadTurnoActivo();
+          // Construir rangos X por turno desde las cabeceras colSpan>=5.
+          var ths = document.querySelectorAll('th');
+          var rangos = {};
+          for (var h = 0; h < ths.length; h++) {
+            if (ths[h].colSpan < 5) continue;
+            var raw = (ths[h].textContent || '').replace(/[^A-ZÁÉÍÓÚÜÑ]/g, '').toUpperCase();
+            var t = raw.endsWith('NOCHE') ? 'NOCHE'
+                  : raw.endsWith('URBANIZACIONES') ? 'URBANIZACIONES'
+                  : raw.endsWith('TARDE') ? 'TARDE' : null;
+            if (!t) continue;
+            var r = ths[h].getBoundingClientRect();
+            if (r.width === 0) continue;
+            rangos[t] = { left: r.left, right: r.right };
+          }
+          // Un turno está desbloqueado si hay algún <select> dentro de su rango X
+          // en el cuerpo de la tabla (las celdas editables SÍ/TIPO y OTROS).
+          var sels = document.querySelectorAll('table tbody select');
+          for (var s = 0; s < sels.length; s++) {
+            var rect = sels[s].getBoundingClientRect();
+            if (rect.width === 0) continue;
+            var cx = rect.left + rect.width / 2;
+            for (var tn in rangos) {
+              if (!rangos.hasOwnProperty(tn)) continue;
+              if (cx >= rangos[tn].left && cx <= rangos[tn].right) return tn;
+            }
+          }
+          return null; // ningún turno con celdas editables → todos bloqueados
+        } catch (e) { return undefined; }
+      }
+
+      function __lkRefreshBtnStates(forzar) {
+        try {
+          // Durante la ventana optimista, NO repintar desde el loop (sí desde los
+          // setTimeout explícitos, que pasan forzar=true).
+          if (!forzar && __lkOptimisticUntil && Date.now() < __lkOptimisticUntil) return;
+
+          // Fuente principal: el DOM (real-time) — presencia de <select> editable.
+          var dom = __lkTurnoDesbloqueadoDOM();    // string | null | undefined
+          var fiber = __lkReadTurnoActivoStrict(); // string | null | undefined
+
+          // Resolver el turno activo combinando ambas señales:
+          //  - DOM string  → fiable (hay celdas editables visibles) → usar DOM.
+          //  - DOM null pero fiber string → caso borde (turno sin filas o frame de
+          //    teardown): preferir el fiber para no marcar rojo un turno abierto.
+          //  - DOM undefined (error) → usar fiber.
+          //  - todo undefined → no tocar nada.
+          var turnoActivo;
+          if (typeof dom === 'string') turnoActivo = dom;
+          else if (dom === null) turnoActivo = (typeof fiber === 'string') ? fiber : null;
+          else turnoActivo = fiber; // dom undefined
+          if (typeof turnoActivo === 'undefined') return;
+
           var btns = document.querySelectorAll('[data-lock-btn]');
           for (var i = 0; i < btns.length; i++) {
             var b = btns[i];
@@ -1403,19 +2788,30 @@
           setTimeout(function(){ __cntMutating = false; }, 50);
         }
 
-        // Encontrar la tabla principal y validar que estamos en ESTADO COMPLETO
-        // (los <th> con colSpan>=5 que dicen NOCHE/URB/TARDE)
+        // Encontrar la tabla principal y los turnos presentes:
+        //   - ESTADO COMPLETO:        3 <th> con colSpan>=5 (NOCHE + URB + TARDE)
+        //   - SERVICIO NOCHE/URB/TARDE: 1 <th> con colSpan>=5 (el turno activo)
+        // En ambos casos pintamos el contador, con tantas columnas como turnos
+        // detectados en pantalla.
         var ths = document.querySelectorAll('th');
         var secciones = { NOCHE: null, URBANIZACIONES: null, TARDE: null };
         for (var i = 0; i < ths.length; i++) {
           if (ths[i].colSpan < 5) continue;
           var raw = (ths[i].textContent || '').replace(/[^A-ZÁÉÍÓÚÜÑ]/g, '').toUpperCase();
-          if (raw === 'NOCHE') secciones.NOCHE = ths[i];
-          else if (raw === 'URBANIZACIONES') secciones.URBANIZACIONES = ths[i];
-          else if (raw === 'TARDE') secciones.TARDE = ths[i];
+          // endsWith para que también case "SERVICIONOCHE" en pantalla SERVICIO NOCHE,
+          // "SERVICIOURBANIZACIONES" en SERVICIO URB, etc. y no solo el "NOCHE" puro
+          // de ESTADO COMPLETO.
+          if (raw.endsWith('NOCHE')) secciones.NOCHE = ths[i];
+          else if (raw.endsWith('URBANIZACIONES')) secciones.URBANIZACIONES = ths[i];
+          else if (raw.endsWith('TARDE')) secciones.TARDE = ths[i];
         }
-        if (!secciones.NOCHE || !secciones.URBANIZACIONES || !secciones.TARDE) {
-          // Si no estamos en ESTADO COMPLETO, retirar contenedores huérfanos y limpiar overlays
+        var turnosPresentes = [];
+        if (secciones.NOCHE) turnosPresentes.push('NOCHE');
+        if (secciones.URBANIZACIONES) turnosPresentes.push('URBANIZACIONES');
+        if (secciones.TARDE) turnosPresentes.push('TARDE');
+        if (turnosPresentes.length === 0) {
+          // No estamos en ESTADO COMPLETO ni en ninguna pantalla SERVICIO:
+          // retirar contenedores huérfanos y limpiar overlays
           var huerfanos = document.querySelectorAll('[id^="__cnt_"]');
           var overlays = document.querySelectorAll('td[data-cnt-aver-overlay="1"]');
           if (huerfanos.length > 0 || overlays.length > 0) {
@@ -1432,24 +2828,25 @@
           return;
         }
 
-        // Buscar la <table> principal
-        var th0 = secciones.NOCHE;
+        // Buscar la <table> principal (a partir del primer <th> encontrado)
+        var th0 = secciones[turnosPresentes[0]];
         var tabla = th0;
         while (tabla && tabla.tagName !== 'TABLE') tabla = tabla.parentNode;
         if (!tabla) return;
 
-        // --- Computar rangos horizontales (x1..x2) de cada turno usando las cabeceras ---
+        // --- Computar rangos horizontales (x1..x2) solo de los turnos presentes ---
         var rangos = {};
-        ['NOCHE','URBANIZACIONES','TARDE'].forEach(function(t) {
+        turnosPresentes.forEach(function(t) {
           var th = secciones[t];
           var r = th.getBoundingClientRect();
           rangos[t] = { left: r.left, right: r.right };
         });
 
         function turnoDeX(cx) {
-          if (cx >= rangos.NOCHE.left && cx <= rangos.NOCHE.right) return 'NOCHE';
-          if (cx >= rangos.URBANIZACIONES.left && cx <= rangos.URBANIZACIONES.right) return 'URBANIZACIONES';
-          if (cx >= rangos.TARDE.left && cx <= rangos.TARDE.right) return 'TARDE';
+          for (var k = 0; k < turnosPresentes.length; k++) {
+            var t = turnosPresentes[k];
+            if (cx >= rangos[t].left && cx <= rangos[t].right) return t;
+          }
           return null;
         }
 
@@ -1658,9 +3055,9 @@
         var fullHtml = '';
         fullHtml += '<div style="font-size:12px;font-weight:700;text-align:center;color:#374151;text-transform:uppercase;letter-spacing:0.1em;padding:6px 0;background:#f9fafb;border-bottom:1px solid #e5e7eb;border-top-left-radius:10px;border-top-right-radius:10px;">&#9660; Camiones pendientes de descarga</div>';
         fullHtml += '<div style="display:flex;gap:8px;">';
-        fullHtml += bloqueTurno('NOCHE');
-        fullHtml += bloqueTurno('URBANIZACIONES');
-        fullHtml += bloqueTurno('TARDE');
+        for (var _ti = 0; _ti < turnosPresentes.length; _ti++) {
+          fullHtml += bloqueTurno(turnosPresentes[_ti]);
+        }
         fullHtml += '</div>';
 
         // Comparar con el contenido actual para no escribir si no cambia (evita loop con observer)
@@ -1730,170 +3127,960 @@
         } catch (e) {}
       }
 
-      function unifyTableGroups() {
-        // Mark every table and row so our CSS can force uniform 40px height.
-        // Also strip any inline height/min-height that React/the bundle sets
-        // (this is what lets the gap before row 3137 open up).
-        var ROW_H = 40;
-        var tables = document.querySelectorAll('table');
-        for (var t = 0; t < tables.length; t++) {
-          if (tables[t].dataset.flatTable !== '1') tables[t].dataset.flatTable = '1';
-          // Neutralise any ancestor that forces the table to stretch with
-          // flex/height. Walk up further than before and use computed style
-          // so we also catch flex containers defined via Tailwind classes.
-          var p = tables[t].parentElement;
-          for (var depth = 0; depth < 10 && p && p !== document.body; depth++) {
-            try {
-              var cs = window.getComputedStyle(p);
-              var isFlexParent = cs.display === 'flex' || cs.display === 'inline-flex';
-              var grows = parseFloat(cs.flexGrow) > 0;
-              if (isFlexParent || grows || p.style.height || p.style.minHeight) {
-                if (p.style.flex !== '0 0 auto') p.style.flex = '0 0 auto';
-                if (p.style.height !== 'auto') p.style.height = 'auto';
-                if (p.style.minHeight !== '0px') p.style.minHeight = '0';
-              }
-            } catch (e) {}
-            p = p.parentElement;
-          }
-        }
-        var rows = document.querySelectorAll('table tr');
-        for (var r = 0; r < rows.length; r++) {
-          var row = rows[r];
-          if (row.dataset.uniformRow !== '1') row.dataset.uniformRow = '1';
-          // Remove inline height attribute and style if present
-          if (row.hasAttribute('height')) row.removeAttribute('height');
-          if (row.style.height) row.style.height = '';
-          if (row.style.minHeight) row.style.minHeight = '';
-          // For each cell: classify as "group cell" (writing-mode rotated
-          // or rowspan>1) or regular cell, and clamp height accordingly.
-          // Recompute EVERY tick — if React lowers the rowspan, we must
-          // bring the inline max-height down or the cell stretches to
-          // its rotated-text natural height (40-200px in iPhone Safari).
-          var tds = row.children;
-          for (var k = 0; k < tds.length; k++) {
-            var td = tds[k];
-            if (td.hasAttribute('height')) td.removeAttribute('height');
-            if (td.style.minHeight) td.style.minHeight = '';
-            var rs = parseInt(td.getAttribute('rowspan') || '1', 10);
-            var wm = '', wmWk = '';
-            try {
-              var _cs = window.getComputedStyle(td);
-              wm   = _cs.writingMode       || '';
-              wmWk = _cs.webkitWritingMode || '';
-            } catch(e) {}
-            // Detect vertical writing-mode via both standard and webkit property,
-            // and also catch legacy WebKit values ('tb', 'tb-lr', 'tb-rl').
-            var isRotated = wm.indexOf('vertical') !== -1 || wmWk.indexOf('vertical') !== -1
-                         || wm === 'tb' || wm === 'tb-lr' || wm === 'tb-rl'
-                         || wmWk === 'tb' || wmWk === 'tb-lr' || wmWk === 'tb-rl';
-            var isGroupCell = isRotated || rs > 1;
-            var clampPx = (rs * ROW_H) + 'px';
-            if (isGroupCell) {
-              if (td.dataset.groupCell !== '1') td.dataset.groupCell = '1';
-              // Use setProperty(..., 'important') — creates an INLINE !important style.
-              // This is the highest priority in the author cascade; it beats any
-              // !important rule in app.css regardless of specificity. A regular
-              // assignment (el.style.x = v) loses to CSS !important; this wins.
-              td.style.setProperty('max-height', clampPx, 'important');
-              td.style.setProperty('height',     clampPx, 'important');
-              if (isRotated && rs <= 2) {
-                // Small-rowspan rotated cell: it cannot show its label anyway.
-                // Force writing-mode horizontal + font-size 0 so the cell has
-                // 0px content height → row stays exactly 40px.
-                if (td.dataset.smallRs !== '1') td.dataset.smallRs = '1';
-                td.style.setProperty('writing-mode',         'horizontal-tb', 'important');
-                td.style.setProperty('-webkit-writing-mode', 'horizontal-tb', 'important');
-                td.style.setProperty('font-size',    '0px', 'important');
-                td.style.setProperty('line-height',  '0',   'important');
-                td.style.setProperty('padding-top',    '0px', 'important');
-                td.style.setProperty('padding-bottom', '0px', 'important');
-              } else if (td.dataset.smallRs === '1') {
-                // Rowspan grew back — restore the rotated label
-                try { delete td.dataset.smallRs; } catch(e) { td.removeAttribute('data-small-rs'); }
-                td.style.removeProperty('writing-mode');
-                td.style.removeProperty('-webkit-writing-mode');
-                td.style.removeProperty('font-size');
-                td.style.removeProperty('line-height');
-                td.style.removeProperty('padding-top');
-                td.style.removeProperty('padding-bottom');
-              }
-            } else {
-              // Regular cell — purge any leftover inline that React/our
-              // prior tick may have set (especially after a rowspan drop).
-              td.style.removeProperty('height');
-              td.style.removeProperty('max-height');
-              if (td.dataset.groupCell === '1') {
-                try { delete td.dataset.groupCell; } catch(e) { td.removeAttribute('data-group-cell'); }
-              }
+      // v1.6 — Texto rojo de avería POR CELDA, agrupado por turno.
+      // El bug de v1.5: marcaba el <tr> entero, así que en ESTADO COMPLETO (3
+      // turnos en la misma fila) teñía NOCHE+URB+TARDE aunque la avería fuera de
+      // un solo turno (caso 3078: averiado en NOCHE/URB pero NO en TARDE → TARDE
+      // salía rojo). Ahora detectamos la avería de CADA turno por separado (igual
+      // que injectContadores) y marcamos sólo las celdas de los turnos averiados.
+      function tintarTextosAveriado() {
+        try {
+          // Migración ÚNICA: limpiar restos de implementaciones anteriores.
+          if (!tintarTextosAveriado.__cleaned) {
+            tintarTextosAveriado.__cleaned = true;
+            // v1.4: color rojo en línea (data-av-tinted) sin revertir
+            var viejos = document.querySelectorAll('[data-av-tinted="1"]');
+            for (var v = 0; v < viejos.length; v++) {
+              viejos[v].style.color = '';
+              var vk = viejos[v].querySelectorAll('*');
+              for (var vj = 0; vj < vk.length; vj++) vk[vj].style.color = '';
+              try { delete viejos[v].dataset.avTinted; } catch (e2) {}
+            }
+            // v1.5: atributo a nivel <tr> (causa del bug del 3078)
+            var viejasFilas = document.querySelectorAll('tr[data-cnt-averiado]');
+            for (var vf = 0; vf < viejasFilas.length; vf++) {
+              viejasFilas[vf].removeAttribute('data-cnt-averiado');
+            }
+            // v1.5: data-cnt-numcell pegado en celdas que React pudo reutilizar
+            var viejosNum = document.querySelectorAll('[data-cnt-numcell="1"]');
+            for (var vn = 0; vn < viejosNum.length; vn++) {
+              viejosNum[vn].removeAttribute('data-cnt-numcell');
             }
           }
-        }
-        // FINAL SAFETY NET: walk again and clamp anything still oversized.
-        // Safari iOS occasionally lets a row stretch despite all the above
-        // (the "3137 huge cell" bug). For each row > 50px, hunt the cells
-        // that are causing it and brute-force collapse them.
-        clampOversizedRows();
-      }
 
-      // Last-resort clamp: if a table row still measures > 50px, find the
-      // rotated/group cells inside it and force their visual size to zero.
-      // This sacrifices the group label for that ONE row (acceptable — the
-      // same label is also shown by the rowspan cells in the other turnos
-      // OR there's only 1 vehicle in that group anyway, so a label adds
-      // nothing). The point is the row stops being huge.
-      function clampOversizedRows() {
-        try {
-          var rows = document.querySelectorAll('table tbody tr[data-uniform-row="1"]');
-          for (var i = 0; i < rows.length; i++) {
-            var row = rows[i];
-            var rh = row.getBoundingClientRect().height;
-            if (rh <= 50) continue;
-            // Found a stretched row. The culprit is almost always a cell
-            // with writing-mode vertical (rotated label). Collapse them.
-            var cells = row.children;
-            for (var j = 0; j < cells.length; j++) {
-              var td = cells[j];
-              var wm = '';
-              try { wm = window.getComputedStyle(td).writingMode || ''; } catch(e) {}
-              if (wm.indexOf('vertical') !== 0) continue;
-              // It's a rotated cell. If its rowspan is small (<=2), it's
-              // useless visually here — collapse it to 0.
-              var rs = parseInt(td.getAttribute('rowspan') || '1', 10);
-              if (rs > 2) continue;
-              if (td.dataset.collapsedRotated !== '1') {
-                td.dataset.collapsedRotated = '1';
-                td.style.fontSize = '0';
-                td.style.lineHeight = '0';
-                td.style.padding = '0';
-                td.style.border = '0';
-                td.style.height = '0';
-                td.style.maxHeight = '0';
-                td.style.minHeight = '0';
-                td.style.overflow = 'hidden';
-                td.style.width = '0';
-                td.style.maxWidth = '0';
-                td.style.minWidth = '0';
+          // Lectura "real" del texto de una celda (solo DOM, sin fibers).
+          // Equivalente a readCellText() de injectContadores para que la detección
+          // de la "A" coincida entre el contador y el tinte.
+          function leerCelda(td) {
+            try {
+              var sel = td.querySelector('select');
+              if (sel) {
+                var sv = (sel.value || '').trim();
+                if (!sv) return '';
+                if (sel.selectedIndex > 0 && sel.options[sel.selectedIndex]) {
+                  return (sel.options[sel.selectedIndex].textContent || sv).trim();
+                }
+                return sv;
+              }
+              var inp = td.querySelector('input, textarea');
+              if (inp) return (inp.value || '').trim();
+              if (td.querySelector('option, datalist')) {
+                var clone = td.cloneNode(true);
+                var del = clone.querySelectorAll('option, datalist');
+                for (var di = 0; di < del.length; di++) del[di].remove();
+                return (clone.textContent || '').trim();
+              }
+              return (td.textContent || '').trim();
+            } catch (eR) {
+              return (td.textContent || '').trim();
+            }
+          }
+
+          // ¿La celda (o algún hijo) tiene fondo rojo fuerte? Reutiliza el mismo
+          // umbral que el contador (__cntEsRojoFuerte) para no discrepar.
+          function celdaTieneRojoFuerte(td) {
+            try {
+              var cs = window.getComputedStyle(td);
+              if (__cntEsRojoFuerte(cs.backgroundColor || '')) return true;
+              var kids = td.querySelectorAll('*');
+              for (var k = 0; k < kids.length; k++) {
+                var kcs = window.getComputedStyle(kids[k]);
+                if (__cntEsRojoFuerte(kcs.backgroundColor || '')) return true;
+                var cn = (kids[k].className || '');
+                if (typeof cn === 'string' && (cn.indexOf('bg-red-5') !== -1 ||
+                    cn.indexOf('bg-red-6') !== -1 || cn.indexOf('bg-red-7') !== -1)) return true;
+              }
+            } catch (eF) {}
+            return false;
+          }
+
+          // 1) Detectar los turnos presentes por las cabeceras colSpan>=5 (criterio
+          // idéntico a injectContadores). Si no hay ninguna, no es pantalla relevante.
+          var ths = document.querySelectorAll('th');
+          var secciones = { NOCHE: null, URBANIZACIONES: null, TARDE: null };
+          for (var h = 0; h < ths.length; h++) {
+            if (ths[h].colSpan < 5) continue;
+            var rawH = (ths[h].textContent || '').replace(/[^A-ZÁÉÍÓÚÜÑ]/g, '').toUpperCase();
+            if (rawH.endsWith('NOCHE')) secciones.NOCHE = ths[h];
+            else if (rawH.endsWith('URBANIZACIONES')) secciones.URBANIZACIONES = ths[h];
+            else if (rawH.endsWith('TARDE')) secciones.TARDE = ths[h];
+          }
+          var turnosPresentes = [];
+          if (secciones.NOCHE) turnosPresentes.push('NOCHE');
+          if (secciones.URBANIZACIONES) turnosPresentes.push('URBANIZACIONES');
+          if (secciones.TARDE) turnosPresentes.push('TARDE');
+
+          if (turnosPresentes.length === 0) {
+            // Pantalla no relevante: retirar marcas que hubieran quedado (reversible).
+            var sueltas0 = document.querySelectorAll('td[data-cnt-averiado-cell="1"]');
+            for (var s0 = 0; s0 < sueltas0.length; s0++) sueltas0[s0].removeAttribute('data-cnt-averiado-cell');
+            return;
+          }
+
+          var rangos = {};
+          for (var rp = 0; rp < turnosPresentes.length; rp++) {
+            var tName = turnosPresentes[rp];
+            var rr = secciones[tName].getBoundingClientRect();
+            rangos[tName] = { left: rr.left, right: rr.right };
+          }
+          function turnoDeX(cx) {
+            for (var z = 0; z < turnosPresentes.length; z++) {
+              var tz = turnosPresentes[z];
+              if (cx >= rangos[tz].left && cx <= rangos[tz].right) return tz;
+            }
+            return null;
+          }
+
+          var tabla = secciones[turnosPresentes[0]];
+          while (tabla && tabla.tagName !== 'TABLE') tabla = tabla.parentNode;
+          if (!tabla) return;
+
+          var trs = tabla.querySelectorAll('tbody tr');
+          for (var i = 0; i < trs.length; i++) {
+            var tr = trs[i];
+            var tds = tr.children;
+            if (!tds || tds.length === 0) continue;
+
+            // BARRIDO INCONDICIONAL: quitar todas las marcas de la fila antes de
+            // recalcular. Garantiza reversibilidad: una celda que deja de
+            // clasificarse (ancho 0, fuera de rango un frame) pierde su rojo.
+            var marcadas = tr.querySelectorAll('td[data-cnt-averiado-cell="1"]');
+            for (var mq = 0; mq < marcadas.length; mq++) {
+              marcadas[mq].removeAttribute('data-cnt-averiado-cell');
+            }
+
+            // Clasificar cada <td> por turno (centro X) — mismo método que el contador.
+            var celdasPorTurno = { NOCHE: [], URBANIZACIONES: [], TARDE: [] };
+            var numcellPorTurno = { NOCHE: null, URBANIZACIONES: null, TARDE: null };
+            for (var c = 0; c < tds.length; c++) {
+              var rect = tds[c].getBoundingClientRect();
+              if (rect.width === 0) continue;
+              var cx = rect.left + rect.width / 2;
+              var tt = turnoDeX(cx);
+              if (tt) celdasPorTurno[tt].push(tds[c]);
+            }
+
+            // Identificar el numcell de cada turno (4 dígitos). En ESTADO COMPLETO
+            // hay 3 (uno por turno), cada uno coloreado de forma independiente.
+            for (var c2 = 0; c2 < tds.length; c2++) {
+              var raw2 = (tds[c2].textContent || '').trim();
+              if (!/^\d{4}$/.test(raw2)) continue; // numcell estricto
+              var rc = tds[c2].getBoundingClientRect();
+              if (rc.width === 0) continue;
+              var cxn = rc.left + rc.width / 2;
+              // marcar SIEMPRE como numcell para que nunca se tiña de rojo
+              if (tds[c2].dataset && tds[c2].dataset.cntNumcell !== '1') {
+                tds[c2].dataset.cntNumcell = '1';
+              }
+              // Asignar al turno: dentro de su rango, o el turno contiguo a la derecha
+              // (la columna nº precede a AV en el layout real).
+              var mejor = null;
+              for (var zi = 0; zi < turnosPresentes.length; zi++) {
+                var tzi = turnosPresentes[zi];
+                if (cxn >= rangos[tzi].left && cxn <= rangos[tzi].right) { mejor = tzi; break; }
+              }
+              if (!mejor) {
+                var mejorDist = Infinity;
+                for (var z2 = 0; z2 < turnosPresentes.length; z2++) {
+                  var tz2 = turnosPresentes[z2];
+                  var dd = rangos[tz2].left - cxn; // numcell a la IZQ del rango
+                  if (dd >= 0 && dd < mejorDist) { mejorDist = dd; mejor = tz2; }
+                }
+                if (mejorDist > 200) mejor = null; // hueco enorme = no es la columna contigua
+              }
+              if (mejor) numcellPorTurno[mejor] = tds[c2];
+            }
+
+            // Por cada turno presente: ¿está averiado ESE turno?
+            for (var tp = 0; tp < turnosPresentes.length; tp++) {
+              var turno = turnosPresentes[tp];
+              var celdas = celdasPorTurno[turno];
+              if (celdas.length === 0) continue;
+
+              var esAver = false;
+              // (a) casilla AV con texto "A"
+              for (var a = 0; a < celdas.length; a++) {
+                if (leerCelda(celdas[a]).toUpperCase() === 'A') { esAver = true; break; }
+              }
+              // (b) numcell de ESTE turno con fondo rojo fuerte
+              if (!esAver && numcellPorTurno[turno] && celdaTieneRojoFuerte(numcellPorTurno[turno])) {
+                esAver = true;
+              }
+
+              if (!esAver) continue;
+
+              // Aplicar rojo a las celdas de datos del turno (nunca al numcell).
+              for (var w = 0; w < celdas.length; w++) {
+                var td = celdas[w];
+                if (td.dataset && td.dataset.cntNumcell === '1') continue;
+                if (td.getAttribute('data-cnt-averiado-cell') !== '1') {
+                  td.setAttribute('data-cnt-averiado-cell', '1');
+                }
               }
             }
           }
         } catch (e) {}
       }
 
-      // Reset zoom if Safari iPad let pinch-out through despite our blockers.
-      // visualViewport.scale < 1 means user zoomed out — re-apply the meta
-      // viewport with initial-scale=1 to snap back. Without this, the rotated
-      // group-label cell (rowspan) tries to grow to fill the extra apparent
-      // height and drags the rows it covers with it.
-      function resetZoomIfNeeded() {
-        try {
-          if (!window.visualViewport) return;
-          var s = window.visualViewport.scale;
-          if (s && Math.abs(s - 1) > 0.02) {
-            var vp = document.querySelector('meta[name=viewport]');
-            if (vp) {
-              vp.setAttribute('content',
-                'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+      // ── Navegación de fecha ◀ / ▶ ────────────────────────────────────────────
+      // Busca el input[type=date] del componente Zx, le añade botones ◀ y ▶.
+      // Al pulsar, lee la fecha actual del input, suma/resta 1 día y despacha
+      // al setter (h0.queue.dispatch) del fiber del componente que contiene el input.
+      function injectDateNav() {
+        var inputs = document.querySelectorAll('input[type="date"]');
+        for (var ii = 0; ii < inputs.length; ii++) {
+          var inp = inputs[ii];
+          var container = inp.parentNode; // div.flex.items-center.gap-2 con label "FECHA:"
+          if (!container) continue;
+          // Comprobar que el hermano anterior es el label "FECHA:"
+          var label = container.querySelector('label');
+          if (!label || (label.textContent || '').trim().toUpperCase() !== 'FECHA:') continue;
+          if (container.querySelector('[data-date-nav]')) continue; // ya inyectado
+
+          var btnStyle = 'display:inline-flex;align-items:center;justify-content:center;' +
+            'width:26px;height:26px;border-radius:50%;border:2px solid #6b7280;' +
+            'background:#f3f4f6;color:#374151;cursor:pointer;font-size:14px;font-weight:bold;' +
+            'line-height:1;padding:0;flex-shrink:0;transition:background 0.15s;';
+
+          var btnPrev = document.createElement('button');
+          btnPrev.type = 'button';
+          btnPrev.setAttribute('data-date-nav', 'prev');
+          btnPrev.style.cssText = btnStyle;
+          btnPrev.innerHTML = '&#9664;'; // ◀
+          btnPrev.title = 'Día anterior';
+
+          var btnNext = document.createElement('button');
+          btnNext.type = 'button';
+          btnNext.setAttribute('data-date-nav', 'next');
+          btnNext.style.cssText = btnStyle;
+          btnNext.innerHTML = '&#9654;'; // ▶
+          btnNext.title = 'Día siguiente';
+
+          // Insertar ◀ antes del input, ▶ después
+          container.insertBefore(btnPrev, inp);
+          inp.insertAdjacentElement('afterend', btnNext);
+
+          // Handler: cambiar fecha ±1 día vía fiber
+          (function(inputEl) {
+            function changeDate(delta) {
+              try {
+                var val = inputEl.value; // "YYYY-MM-DD"
+                if (!val) return;
+                var d = new Date(val + 'T12:00:00');
+                d.setDate(d.getDate() + delta);
+                var yyyy = d.getFullYear();
+                var mm = String(d.getMonth() + 1).padStart(2, '0');
+                var dd = String(d.getDate()).padStart(2, '0');
+                var newVal = yyyy + '-' + mm + '-' + dd;
+                // Despachar via fiber: buscar el setter del useState de fecha
+                // subiendo desde el input por el fiber
+                var fk = null;
+                var keys = Object.keys(inputEl);
+                for (var i = 0; i < keys.length; i++) {
+                  if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
+                }
+                if (!fk) {
+                  // El input puede no tener fiber propio; buscar en el contenedor
+                  var parent = inputEl.parentNode;
+                  if (parent) {
+                    keys = Object.keys(parent);
+                    for (var i = 0; i < keys.length; i++) {
+                      if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
+                    }
+                    if (fk) inputEl = parent;
+                  }
+                }
+                if (!fk) return;
+                var node = inputEl[fk];
+                for (var depth = 0; depth < 25; depth++) {
+                  if (!node) break;
+                  var ms = node.memoizedState;
+                  if (ms && typeof ms.memoizedState === 'string' && ms.memoizedState.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    // Este es el hook de fecha — obtener dispatch
+                    var q = ms.queue;
+                    if (q && typeof q.dispatch === 'function') {
+                      q.dispatch(newVal);
+                      return;
+                    }
+                  }
+                  node = node.return;
+                }
+              } catch(e) {}
             }
+            inputEl.parentNode.querySelector('[data-date-nav="prev"]').onclick = function(e) {
+              e.preventDefault(); e.stopPropagation(); changeDate(-1);
+            };
+            inputEl.parentNode.querySelector('[data-date-nav="next"]').onclick = function(e) {
+              e.preventDefault(); e.stopPropagation(); changeDate(+1);
+            };
+          })(inp);
+        }
+      }
+
+      // ── Filtro averías: NINGUNO + botón preset ──────────────────────────────
+      var __PRESET_CATS = [
+        'CARGAS LATERALES',
+        'CARGAS TRASERAS Y C. TRACTORAS',
+        'EQUIPOS LAVA Y CUBAS',
+        'EQUIPOS HIDROS',
+        'IVECOS DAILY Y MAXUX',
+        'INVICTAS CITROEN DFSK'
+      ];
+
+      // Busca el botón "TODOS" del dropdown del filtro de categorías (debe estar visible)
+      function __avFindTodosBtn() {
+        var buttons = document.querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+          if ((buttons[i].textContent || '').trim() === 'TODOS') {
+            var parent = buttons[i].parentNode;
+            if (parent && parent.children.length > 3) return buttons[i];
+          }
+        }
+        return null;
+      }
+
+      // Busca el botón principal del filtro "FILTRAR CATEGORÍAS" (siempre visible)
+      function __avFindMainFilterBtn() {
+        var buttons = document.querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+          var txt = (buttons[i].textContent || '');
+          if (txt.indexOf('FILTRAR CATEGOR') !== -1) return buttons[i];
+        }
+        return null;
+      }
+
+      // Obtiene el dispatch del useState W (Set de categorías) del fiber del nodo dado.
+      function __avGetDispatch(node) {
+        try {
+          if (!node) return null;
+          var fk = null;
+          var keys = Object.keys(node);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
+          }
+          if (!fk) return null;
+          var fiber = node[fk];
+          for (var depth = 0; depth < 25; depth++) {
+            if (!fiber) break;
+            var ms = fiber.memoizedState;
+            var h = ms;
+            for (var hi = 0; hi < 20 && h; hi++) {
+              if (h.memoizedState instanceof Set) {
+                var q = h.queue;
+                if (q && typeof q.dispatch === 'function') return q.dispatch;
+              }
+              h = h.next;
+            }
+            fiber = fiber.return;
+          }
+        } catch(e) {}
+        return null;
+      }
+
+      // Despacha un nuevo Set buscando el dispatch en vivo cada vez (no cachea referencias).
+      function __avDispatchSet(newSet) {
+        // Intentar primero desde el botón principal del filtro (siempre vivo)
+        var mainBtn = __avFindMainFilterBtn();
+        if (mainBtn) {
+          var d = __avGetDispatch(mainBtn);
+          if (d) { d(newSet); return true; }
+        }
+        // Fallback: desde TODOS si está visible
+        var todosBtn = __avFindTodosBtn();
+        if (todosBtn) {
+          var d2 = __avGetDispatch(todosBtn);
+          if (d2) { d2(newSet); return true; }
+        }
+        return false;
+      }
+
+      function injectAveriasFilter() {
+        // ── 1. Botón ★ preset SIEMPRE visible (junto al contador del botón principal) ──
+        var mainBtn = __avFindMainFilterBtn();
+        if (mainBtn && !mainBtn.parentNode.querySelector('[data-av-preset]')) {
+          // El botón principal tiene dos spans hijos: "FILTRAR CATEGORÍAS" y el contador "TODAS▾"
+          // Queremos el ★ pegado a la izquierda del span del contador (el azul)
+          var spans = mainBtn.querySelectorAll('span');
+          var contadorSpan = null;
+          for (var s = 0; s < spans.length; s++) {
+            var c = (spans[s].className || '');
+            if (c.indexOf('bg-blue') !== -1 || c.indexOf('rounded-full') !== -1) {
+              contadorSpan = spans[s];
+              break;
+            }
+          }
+          if (!contadorSpan && spans.length >= 2) contadorSpan = spans[spans.length - 1];
+
+          if (contadorSpan) {
+            var presetBtn = document.createElement('button');
+            presetBtn.type = 'button';
+            presetBtn.setAttribute('data-av-preset', '1');
+            presetBtn.title = 'Seleccionar favoritos (Cargas, Lava y cubas, Hidros, Ivecos, Invictas)';
+            presetBtn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;' +
+              'margin-right:6px;padding:3px 10px;border-radius:9999px;border:2px solid #2563eb;' +
+              'background:#dbeafe;color:#1d4ed8;cursor:pointer;font-size:13px;font-weight:bold;' +
+              'white-space:nowrap;line-height:1;vertical-align:middle;height:24px;';
+            presetBtn.textContent = '★';
+            // Insertar justo antes del contador (pegado a él)
+            contadorSpan.parentNode.insertBefore(presetBtn, contadorSpan);
+            presetBtn.onclick = function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              __avDispatchSet(new Set(__PRESET_CATS));
+            };
+          }
+        }
+
+        // ── 2. Botón NINGUNO justo después de TODOS (solo cuando dropdown está abierto) ──
+        var todosBtn = __avFindTodosBtn();
+        if (todosBtn && !todosBtn.parentNode.querySelector('[data-av-ninguno]')) {
+          var ningunoBtn = document.createElement('button');
+          ningunoBtn.type = 'button';
+          ningunoBtn.setAttribute('data-av-ninguno', '1');
+          // Heredar el className del botón TODOS para que tenga el mismo aspecto base
+          ningunoBtn.className = todosBtn.className;
+          ningunoBtn.textContent = 'NINGUNO';
+          todosBtn.insertAdjacentElement('afterend', ningunoBtn);
+          ningunoBtn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            __avDispatchSet(new Set());
+          };
+        }
+      }
+
+      // ── Badge de versión + historial (esquina inferior derecha de la PORTADA) ──
+      // Muestra la versión actual en gris discreto. Al pulsar, despliega la lista
+      // del historial de versiones. Solo visible en el menú principal (cuando NO
+      // existe el botón MENU). Para añadir una versión nueva: meterla la PRIMERA
+      // en el array __VERSION_HISTORY (el [0] es la versión actual del badge).
+      var __VERSION_HISTORY = [
+        'v1.9G',
+        'v1.8.2',
+        'v1.8.1',
+        'v1.8',
+        'v1.7.4',
+        'v1.7.3',
+        'v1.7.2',
+        'v1.7.1',
+        'v1.7',
+        'v1.6.2',
+        'v1.6.1',
+        'v1.6',
+        'v1.5',
+        'v1.4',
+        'v1.3',
+        'v1.0'
+      ];
+      function injectVersionBadge() {
+        try {
+          var enPortada = !findMenuBackButton();
+          var badge = document.getElementById('__ver_badge__');
+          var panel = document.getElementById('__ver_panel__');
+
+          if (!enPortada) {
+            // Ocultar solo si está visible (idempotente, sin agitar el observer).
+            if (badge && badge.style.display !== 'none') {
+              __cntMutating = true;
+              badge.style.display = 'none';
+              if (panel) panel.style.display = 'none';
+              setTimeout(function () { __cntMutating = false; }, 50);
+            }
+            return;
+          }
+
+          // En portada: si el badge ya existe y está visible, NO tocar nada
+          // (evita el bucle observer→runInjections→mutación que en el WebView
+          // de Android competía con el montaje de React → pantalla en blanco).
+          if (badge && badge.style.display === 'block' && panel) return;
+
+          // Guard: el MutationObserver ignora cambios mientras __cntMutating=true.
+          __cntMutating = true;
+          try {
+            if (!badge) {
+              badge = document.createElement('div');
+              badge.id = '__ver_badge__';
+              badge.textContent = __VERSION_HISTORY[0];
+              badge.style.cssText = 'position:fixed;right:14px;bottom:10px;z-index:99999;' +
+                'font-family:inherit;font-size:12px;font-weight:600;letter-spacing:0.05em;' +
+                'color:rgba(255,255,255,0.45);background:rgba(255,255,255,0.04);' +
+                'border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:4px 10px;' +
+                'cursor:pointer;user-select:none;transition:color 0.15s,background 0.15s;';
+              badge.onmouseenter = function () {
+                badge.style.color = 'rgba(255,255,255,0.85)';
+                badge.style.background = 'rgba(255,255,255,0.10)';
+              };
+              badge.onmouseleave = function () {
+                badge.style.color = 'rgba(255,255,255,0.45)';
+                badge.style.background = 'rgba(255,255,255,0.04)';
+              };
+              badge.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var p = document.getElementById('__ver_panel__');
+                if (p) p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
+              };
+              document.body.appendChild(badge);
+            }
+            if (badge.style.display !== 'block') badge.style.display = 'block';
+
+            if (!panel) {
+              panel = document.createElement('div');
+              panel.id = '__ver_panel__';
+              panel.style.cssText = 'position:fixed;right:14px;bottom:42px;z-index:99999;' +
+                'font-family:inherit;min-width:120px;background:rgba(17,24,39,0.96);' +
+                'border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:8px 0;' +
+                'box-shadow:0 6px 20px rgba(0,0,0,0.45);display:none;';
+              var titulo = document.createElement('div');
+              titulo.textContent = 'HISTORIAL';
+              titulo.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:0.12em;' +
+                'color:rgba(255,255,255,0.40);text-align:center;padding:2px 12px 6px;' +
+                'border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:4px;';
+              panel.appendChild(titulo);
+              for (var i = 0; i < __VERSION_HISTORY.length; i++) {
+                var item = document.createElement('div');
+                item.textContent = __VERSION_HISTORY[i];
+                var esActual = (i === 0);
+                item.style.cssText = 'font-size:12px;padding:4px 14px;' +
+                  'color:' + (esActual ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)') + ';' +
+                  'font-weight:' + (esActual ? '700' : '500') + ';';
+                if (esActual) item.textContent = __VERSION_HISTORY[i] + '  •';
+                panel.appendChild(item);
+              }
+              document.body.appendChild(panel);
+            }
+          } finally {
+            setTimeout(function () { __cntMutating = false; }, 50);
+          }
+        } catch (e) {}
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // v1.7 — AÑADIR / QUITAR / EDITAR vehículo AD-HOC del día en ESTADO COMPLETO
+      //
+      // El bundle YA soporta vehículos por-día: la pantalla EDITAR VEHÍCULOS
+      // (componente i1) escribe en el doc de servicios de ese día:
+      //   vehiculosOrden (arrayUnion el vid) + gruposCustom.<vid>="LATERALES"|"TRASERAS"
+      //   + registros.<vid> en blanco. El render de ESTADO COMPLETO y de las
+      //   pantallas individuales usan el MISMO sitio de agrupación, que hace
+      //   _e = Na ∪ vehiculosOrden(3 turnos) y agrupa por gruposCustom merge de los
+      //   3 turnos. Por eso basta escribir en el doc de NOCHE para que el vehículo
+      //   salga en TODAS las pantallas de ese día, y desaparece solo al día
+      //   siguiente (los campos son por-día). Aquí solo lo exponemos INLINE con un
+      //   "+" bajo cada grupo y ×/✎ en las filas añadidas. Escritura atómica con la
+      //   app secundaria __uaDb (misma vía que el fix v1.6.3), NUNCA por fibers.
+      // ═══════════════════════════════════════════════════════════════════════
+
+      // Flota permanente (R0 ∪ C0 del bundle). Estas filas NO son borrables/editables:
+      // solo las AD-HOC (vid que NO está aquí) llevan controles ×/✎.
+      var __AV_FLEET = {};
+      ['3023','3038','3053','3054','3078','3079','3086','3087','3104','3105','3106','3107','3115','3116','3117','3129','3136','3137','3085','3135']
+        .forEach(function (v) { __AV_FLEET[v] = 1; });
+
+      function __avBlank() { return { estado: null, cargaNo: false, cargaSiTipo: '', otros: '' }; }
+
+      // Nº válido: alfanumérico 1-12 (evita romper rutas de campo Firestore con . / [ ] etc.)
+      function __avValidVid(v) { return /^[A-Z0-9]{1,12}$/.test(v); }
+
+      // Docs de servicios de HOY (por turno) desde memoria, casando la fecha con tolerancia.
+      function __avDocsHoy() {
+        var res = { NOCHE: null, URBANIZACIONES: null, TARDE: null };
+        try {
+          var servicios = __lkReadServicios() || [];
+          var clave = __lkFechaKey(__lkFechaStrActual());
+          if (!clave) return res;
+          for (var i = 0; i < servicios.length; i++) {
+            var s = servicios[i];
+            if (s && res.hasOwnProperty(s.turno) && __lkFechaKey(s.fechaStr) === clave && !res[s.turno]) res[s.turno] = s;
+          }
+        } catch (e) {}
+        return res;
+      }
+      // ¿El vid ya está presente hoy (flota o añadido)?
+      function __avVidPresente(vid) {
+        if (__AV_FLEET[vid]) return true;
+        var d = __avDocsHoy();
+        return ['NOCHE', 'URBANIZACIONES', 'TARDE'].some(function (t) {
+          var doc = d[t]; if (!doc) return false;
+          return (doc.vehiculosOrden && doc.vehiculosOrden.indexOf(vid) >= 0) || (doc.registros && doc.registros[vid]);
+        });
+      }
+      // Envuelve una escritura async con spinner + timeout honesto + aviso de error.
+      function __avRunWrite(busyMsg, buildPromise, errMsg) {
+        __lkShowBusy(busyMsg);
+        var settled = false;
+        var to = setTimeout(function () {
+          if (settled) return; settled = true; __lkHideBusy();
+          __lkShowAlert('Guardando… Si la conexión es lenta, se aplicará al reconectar — comprueba en unos segundos.');
+        }, 12000);
+        __uaEnsureFirebase().then(function () {
+          var db = __uaInitFirebase();
+          if (!db) throw new Error('sin firestore');
+          return buildPromise(db);
+        }).then(function () {
+          if (settled) return; settled = true; clearTimeout(to); __lkHideBusy();
+        }).catch(function (e) {
+          if (settled) return; settled = true; clearTimeout(to); __lkHideBusy();
+          __lkShowAlert(errMsg + (e && e.message ? (' (' + e.message + ')') : '') + ' Inténtalo de nuevo.');
+        });
+      }
+      // AÑADIR: escribe en el doc de NOCHE de hoy (basta para que salga en todas las pantallas).
+      // NO escribe registros.<vid> (una registro ausente se pinta en blanco y editable):
+      // así, si por una carrera el vid ya existiera, NUNCA le borramos sus datos.
+      function __avAdd(vid, grupo) {
+        vid = String(vid || '').trim().toUpperCase();
+        if (!vid) return;
+        if (!__avValidVid(vid)) { __lkShowAlert('Número no válido. Usa solo letras y números (sin espacios ni puntos).'); return; }
+        if (__avVidPresente(vid)) { __lkShowAlert('El vehículo ' + vid + ' ya está en la lista.'); return; }
+        __avRunWrite('Añadiendo…', function (db) {
+          var fStr = __lkFechaStrActual(); if (!fStr) throw new Error('sin fecha');
+          var noche = __avDocsHoy().NOCHE;
+          var FV = firebase.firestore.FieldValue;
+          if (noche) {
+            var ref = __lkServicioDocRef(db, noche.id); // id REAL del doc en memoria
+            var upd = { vehiculosOrden: FV.arrayUnion(vid) };
+            upd['gruposCustom.' + vid] = grupo;
+            return ref.update(upd);
+          }
+          var ref2 = __lkServicioDocRef(db, 'NOCHE_' + fStr.replace(/\//g, '-'));
+          var payload = { turno: 'NOCHE', fechaStr: fStr, timestamp: Date.now(), vehiculosOrden: FV.arrayUnion(vid), gruposCustom: {} };
+          payload.gruposCustom[vid] = grupo;
+          return ref2.set(payload, { merge: true });
+        }, 'No se pudo añadir el vehículo.');
+      }
+      // QUITAR: limpia el vid en TODOS los turnos de hoy donde esté (por si se editó en varios).
+      function __avDelete(vid) {
+        vid = String(vid || '').trim().toUpperCase();
+        if (!vid) return;
+        __avRunWrite('Borrando…', function (db) {
+          var srv = __lkReadServicios();
+          if (!srv || !srv.length) throw new Error('datos no cargados'); // no falsear un "borrado OK" vacío
+          var d = __avDocsHoy();
+          var FV = firebase.firestore.FieldValue;
+          var ps = [];
+          ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
+            var doc = d[t]; if (!doc) return;
+            var tiene = (doc.vehiculosOrden && doc.vehiculosOrden.indexOf(vid) >= 0) || (doc.registros && doc.registros[vid]) || (doc.gruposCustom && doc.gruposCustom[vid]);
+            if (!tiene) return;
+            var ref = __lkServicioDocRef(db, doc.id);
+            var upd = { vehiculosOrden: FV.arrayRemove(vid) };
+            upd['registros.' + vid] = FV.delete();
+            upd['gruposCustom.' + vid] = FV.delete();
+            ps.push(ref.update(upd));
+          });
+          return Promise.all(ps);
+        }, 'No se pudo quitar el vehículo.');
+      }
+      // EDITAR Nº: renombra vid→nuevo en todos los turnos de hoy, conservando los datos.
+      function __avRename(vid, nuevo) {
+        vid = String(vid || '').trim().toUpperCase();
+        nuevo = String(nuevo || '').trim().toUpperCase();
+        if (!vid || !nuevo || vid === nuevo) return;
+        if (!__avValidVid(nuevo)) { __lkShowAlert('Número no válido. Usa solo letras y números (sin espacios ni puntos).'); return; }
+        if (__avVidPresente(nuevo)) { __lkShowAlert('El vehículo ' + nuevo + ' ya existe.'); return; }
+        __avRunWrite('Guardando…', function (db) {
+          var srv = __lkReadServicios();
+          if (!srv || !srv.length) throw new Error('datos no cargados');
+          var d = __avDocsHoy();
+          var FV = firebase.firestore.FieldValue;
+          var ps = [];
+          ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
+            var doc = d[t]; if (!doc) return;
+            var inOrden = doc.vehiculosOrden && doc.vehiculosOrden.indexOf(vid) >= 0;
+            var reg = doc.registros && doc.registros[vid];
+            var grp = doc.gruposCustom && doc.gruposCustom[vid];
+            if (!inOrden && !reg && !grp) return;
+            var upd = {};
+            // vehiculosOrden reescrito entero (el orden de esta lista NO afecta al
+            // orden mostrado, que sale de gruposCustom); ventana de carrera mínima y
+            // sólo en renombrar, acción rara. Igual que hace el propio bundle.
+            if (inOrden) upd.vehiculosOrden = doc.vehiculosOrden.map(function (x) { return x === vid ? nuevo : x; });
+            if (reg) { upd['registros.' + nuevo] = reg; upd['registros.' + vid] = FV.delete(); }
+            if (grp) { upd['gruposCustom.' + nuevo] = grp; upd['gruposCustom.' + vid] = FV.delete(); }
+            ps.push(__lkServicioDocRef(db, doc.id).update(upd));
+          });
+          return Promise.all(ps);
+        }, 'No se pudo editar el vehículo.');
+      }
+
+      // ── Modales ──────────────────────────────────────────────────────────────
+      function __avPrompt(titulo, sub, inicial, onOk) {
+        var ex = document.getElementById('__av_modal__'); if (ex) ex.parentNode.removeChild(ex);
+        var m = document.createElement('div'); m.id = '__av_modal__';
+        m.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        m.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:24px;max-width:340px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3)">' +
+          '<h3 style="font-size:16px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 6px;color:#1f2937">' + titulo + '</h3>' +
+          '<p style="font-size:12px;color:#6b7280;text-align:center;margin:0 0 16px">' + sub + '</p>' +
+          '<input id="__av_inp__" type="text" inputmode="numeric" autocomplete="off" placeholder="Nº vehículo" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;font-size:20px;text-align:center;letter-spacing:0.15em;box-sizing:border-box;outline:none" />' +
+          '<div style="display:flex;gap:10px;margin-top:14px">' +
+          '<button id="__av_cancel__" type="button" style="flex:1;background:#f3f4f6;border:none;border-radius:8px;padding:12px;font-weight:bold;cursor:pointer;font-size:14px">CANCELAR</button>' +
+          '<button id="__av_ok__" type="button" style="flex:1;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:bold;cursor:pointer;font-size:14px">ACEPTAR</button>' +
+          '</div></div>';
+        document.body.appendChild(m);
+        var inp = document.getElementById('__av_inp__');
+        if (inicial) inp.value = inicial;
+        setTimeout(function () { try { inp.focus(); inp.select(); } catch (e) {} }, 60);
+        function close() { try { document.body.removeChild(m); } catch (e) {} }
+        function ok() { var v = (inp.value || '').trim(); close(); if (v) onOk(v); }
+        document.getElementById('__av_ok__').onclick = ok;
+        document.getElementById('__av_cancel__').onclick = close;
+        inp.onkeydown = function (ev) { if (ev.key === 'Enter') ok(); else if (ev.key === 'Escape') close(); };
+      }
+      function __avShowAddPrompt(grupo) {
+        __avPrompt('AÑADIR VEHÍCULO', 'Se añadirá a ' + (grupo === 'LATERALES' ? 'CARGAS LATERALES' : 'TRASERAS') + ' solo para hoy.', '', function (v) { __avAdd(v, grupo); });
+      }
+      function __avShowRenamePrompt(vid) {
+        __avPrompt('EDITAR Nº', 'Cambia el número del vehículo añadido.', vid, function (v) { __avRename(vid, v); });
+      }
+      function __avShowDeleteConfirm(vid) {
+        var ex = document.getElementById('__av_del_modal__'); if (ex) ex.parentNode.removeChild(ex);
+        var m = document.createElement('div'); m.id = '__av_del_modal__';
+        m.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        m.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:340px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3);text-align:center">' +
+          '<h3 style="font-size:17px;font-weight:bold;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 12px;color:#b91c1c">QUITAR VEHÍCULO</h3>' +
+          '<p style="font-size:13px;color:#4b5563;margin:0 0 20px">¿Quitar el vehículo <b style="color:#1f2937">' + vid + '</b> añadido hoy?</p>' +
+          '<div style="display:flex;gap:12px">' +
+          '<button id="__av_del_no__" type="button" style="flex:1;background:#f3f4f6;border:2px solid #9ca3af;color:#4b5563;border-radius:10px;padding:12px;font-weight:bold;cursor:pointer;font-size:18px">✕</button>' +
+          '<button id="__av_del_yes__" type="button" style="flex:1;background:#fee2e2;border:2px solid #dc2626;color:#b91c1c;border-radius:10px;padding:12px;font-weight:bold;cursor:pointer;font-size:18px">✓</button>' +
+          '</div></div>';
+        document.body.appendChild(m);
+        function close() { try { document.body.removeChild(m); } catch (e) {} }
+        document.getElementById('__av_del_no__').onclick = close;
+        document.getElementById('__av_del_yes__').onclick = function () { close(); __avDelete(vid); };
+      }
+
+      // ── Inyección DOM (solo ESTADO COMPLETO): "+" bajo cada grupo + ×/✎ en filas añadidas ──
+      // Nº propio de la celda, ignorando nuestros controles inyectados (✎ ×) para
+      // que la detección sea estable antes y después de añadirlos (el nº puede ir
+      // envuelto en un hijo, así que no basta con los nodos de texto directos).
+      function __avCellNum(td) {
+        return (td.textContent || '').replace(/[✎×]/g, '').replace(/\s+/g, '').trim();
+      }
+
+      // ── MODO EDICIÓN de tabla (lápiz en la esquina sup-izq) ──
+      // Con el lápiz ACTIVO (previa contraseña) se puede editar TODA la tabla:
+      //  · las CELDAS de los turnos → los candados se abren SIN pedir clave otra vez
+      //    (la app solo deja editar 1 turno a la vez; se cambia tocando su candado);
+      //  · AÑADIR/QUITAR/EDITAR filas ad-hoc del día (los "+" y ×/✎).
+      // En estado normal (lápiz apagado) la tabla queda limpia y los candados vuelven
+      // a pedir su clave por turno.
+      var __avEditMode = false;
+      var __AV_EDIT_PWS = { '1020': 1, '1030': 1, '1040': 1 }; // vale cualquiera de las 3 claves de turno
+      var __AV_PENCIL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+      function __avStylePencil(btn) {
+        if (__avEditMode) {
+          btn.style.cssText = 'display:block;margin:6px auto;width:26px;height:26px;padding:0;border-radius:7px;border:2px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;line-height:0;box-shadow:0 1px 3px rgba(0,0,0,0.25);';
+          btn.title = 'Salir de edición (bloquea la tabla)';
+        } else {
+          btn.style.cssText = 'display:block;margin:6px auto;width:26px;height:26px;padding:0;border-radius:7px;border:1px solid #cbd5e1;background:#fff;color:#64748b;cursor:pointer;line-height:0;';
+          btn.title = 'Editar tabla (pide clave)';
+        }
+        btn.setAttribute('data-av-pencil-on', __avEditMode ? '1' : '0');
+      }
+      // Bloquea la tabla: dispatch(null) al hook del candado del bundle (mismo fiber
+      // que usa __lkOnClick). La app solo tiene UN turno desbloqueado a la vez, así
+      // que con dispatch(null) se bloquea todo.
+      function __avLockAll() {
+        try {
+          var sc = document.querySelector('[data-scroll-container]'); if (!sc) return;
+          var fk = null, keys = Object.keys(sc);
+          for (var k = 0; k < keys.length; k++) { if (keys[k].indexOf('__reactFiber$') === 0) { fk = keys[k]; break; } }
+          if (!fk) return;
+          var node = sc[fk];
+          for (var d = 0; d < 20; d++) {
+            node = node && node.return; if (!node) break;
+            if (typeof node.type !== 'function') continue;
+            var h0 = node.memoizedState; if (!h0) continue;
+            var h1 = h0.next, h2 = h1 && h1.next, h3 = h2 && h2.next;
+            if (h3 && h3.queue && typeof h3.queue.dispatch === 'function' &&
+                (h3.memoizedState === null || h3.memoizedState === 'NOCHE' || h3.memoizedState === 'URBANIZACIONES' || h3.memoizedState === 'TARDE') &&
+                typeof h0.memoizedState === 'string' && h0.memoizedState.indexOf('-') !== -1) {
+              try { h3.queue.dispatch(null); } catch (e) {}
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+      // Modal de clave para ENTRAR en modo edición (vale cualquier clave de turno).
+      function __avShowEditPwPrompt(onOk) {
+        var ex = document.getElementById('__av_editpw__'); if (ex) ex.parentNode.removeChild(ex);
+        var m = document.createElement('div'); m.id = '__av_editpw__';
+        m.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        m.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:28px;max-width:320px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3)">' +
+          '<h3 style="font-size:18px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px;color:#1f2937">EDITAR TABLA</h3>' +
+          '<p style="font-size:12px;color:#6b7280;text-align:center;font-weight:bold;text-transform:uppercase;margin:0 0 18px">INTRODUCE UNA CLAVE DE TURNO</p>' +
+          '<input id="__av_editpw_inp__" type="password" placeholder="****" autocomplete="off" inputmode="numeric" style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;font-size:20px;text-align:center;letter-spacing:0.5em;box-sizing:border-box;outline:none"/>' +
+          '<p id="__av_editpw_err__" style="color:#ef4444;font-size:12px;text-align:center;font-weight:bold;visibility:hidden;margin:6px 0 0">CONTRASEÑA INCORRECTA</p>' +
+          '<div style="display:flex;gap:10px;margin-top:14px">' +
+          '<button id="__av_editpw_cancel__" type="button" style="flex:1;background:#f3f4f6;border:none;border-radius:8px;padding:12px;font-weight:bold;cursor:pointer;font-size:14px">CANCELAR</button>' +
+          '<button id="__av_editpw_ok__" type="button" style="flex:1;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:bold;cursor:pointer;font-size:14px">ACCEDER</button>' +
+          '</div></div>';
+        document.body.appendChild(m);
+        var inp = document.getElementById('__av_editpw_inp__');
+        var err = document.getElementById('__av_editpw_err__');
+        setTimeout(function () { try { inp.focus(); } catch (e) {} }, 60);
+        function close() { try { document.body.removeChild(m); } catch (e) {} }
+        function tryOk() {
+          if (__AV_EDIT_PWS[(inp.value || '').trim()]) { close(); try { onOk(); } catch (e) {} }
+          else { err.style.visibility = 'visible'; inp.value = ''; inp.focus(); }
+        }
+        document.getElementById('__av_editpw_ok__').onclick = tryOk;
+        document.getElementById('__av_editpw_cancel__').onclick = close;
+        inp.onkeydown = function (ev) { if (ev.key === 'Enter') tryOk(); else if (ev.key === 'Escape') close(); };
+      }
+      function __avMakePencilBtn() {
+        var b = document.createElement('button');
+        b.setAttribute('data-av-pencil', '1'); b.type = 'button';
+        b.innerHTML = __AV_PENCIL_SVG;
+        __avStylePencil(b);
+        b.onclick = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          if (!__avEditMode) {
+            __avShowEditPwPrompt(function () { __avEditMode = true; try { injectAddVehControls(); } catch (_) {} });
+          } else {
+            __avEditMode = false;
+            try { __avLockAll(); } catch (_) {}   // al salir, bloquear la tabla
+            try { injectAddVehControls(); } catch (_) {}
+          }
+        };
+        return b;
+      }
+      function __avMakeAddBtn(grupo) {
+        var b = document.createElement('button');
+        b.setAttribute('data-av-add', grupo); b.type = 'button'; b.textContent = '+';
+        b.title = 'Añadir vehículo a ' + (grupo === 'LATERALES' ? 'CARGAS LATERALES' : 'TRASERAS') + ' (solo hoy)';
+        // Flujo normal + writing-mode horizontal: la celda es vertical-lr, así el "+"
+        // fluye DEBAJO del texto rotado (posicionar absoluto en un <td> rowspan es
+        // poco fiable en Chromium). El glyph queda derecho.
+        b.style.cssText = 'display:inline-block;writing-mode:horizontal-tb;margin-top:10px;width:24px;height:24px;padding:0;line-height:20px;text-align:center;font-size:17px;font-weight:900;border-radius:50%;border:2px solid #2563eb;background:#dbeafe;color:#1d4ed8;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.2);';
+        b.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __avShowAddPrompt(grupo); };
+        return b;
+      }
+      function __avMakeRowCtrls(vid) {
+        var wrap = document.createElement('span');
+        wrap.setAttribute('data-av-row', vid);
+        wrap.style.cssText = 'display:inline-flex;gap:3px;margin-left:5px;vertical-align:middle;';
+        var edit = document.createElement('button'); edit.type = 'button'; edit.textContent = '✎'; edit.title = 'Editar nº';
+        edit.style.cssText = 'width:18px;height:18px;padding:0;line-height:16px;font-size:11px;border-radius:4px;border:1px solid #f59e0b;background:#fef3c7;color:#b45309;cursor:pointer;';
+        edit.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __avShowRenamePrompt(vid); };
+        var del = document.createElement('button'); del.type = 'button'; del.textContent = '×'; del.title = 'Quitar vehículo (hoy)';
+        del.style.cssText = 'width:18px;height:18px;padding:0;line-height:14px;font-size:15px;font-weight:900;border-radius:4px;border:1px solid #ef4444;background:#fee2e2;color:#dc2626;cursor:pointer;';
+        del.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __avShowDeleteConfirm(vid); };
+        wrap.appendChild(edit); wrap.appendChild(del);
+        return wrap;
+      }
+      function injectAddVehControls() {
+        try {
+          if (!__uaEsEstadoCompleto()) return; // solo en ESTADO COMPLETO (3 turnos)
+
+          // vids ad-hoc de hoy (los que NO son flota permanente)
+          var adHoc = {};
+          try {
+            var d = __avDocsHoy();
+            ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
+              var doc = d[t]; if (!doc) return;
+              (doc.vehiculosOrden || []).forEach(function (v) { v = String(v); if (v && !__AV_FLEET[v]) adHoc[v] = 1; });
+              if (doc.gruposCustom) Object.keys(doc.gruposCustom).forEach(function (v) { if (v && !__AV_FLEET[v]) adHoc[v] = 1; });
+            });
+          } catch (e) {}
+          var hasAdHoc = false; for (var k in adHoc) { hasAdHoc = true; break; }
+
+          // 1 SOLO barrido: esquina sup-izq (th vacío más a la izq → lápiz), etiqueta
+          // de grupo (la más a la izq. → un único "+") y celda de nº de cada ad-hoc.
+          var cells = document.querySelectorAll('th,td');
+          var cornerTh = null, cornerX = Infinity;
+          var groupLeft = {};  // 'LATERALES'|'TRASERAS' -> {cell,x}
+          var numLeft = {};    // vid -> {cell,x}
+          for (var i = 0; i < cells.length; i++) {
+            var el = cells[i];
+            if (el.tagName === 'TH') {
+              if ((el.textContent || '').trim() === '') {
+                var xt = el.getBoundingClientRect().left;
+                if (xt < cornerX) { cornerX = xt; cornerTh = el; }
+              }
+              continue;
+            }
+            var raw = (el.textContent || '').replace(/[+]/g, '').replace(/\s+/g, ' ').trim();
+            var grupo = raw.indexOf('LATERALES') >= 0 ? 'LATERALES' : (raw.indexOf('TRASERAS') >= 0 ? 'TRASERAS' : null);
+            if (grupo) {
+              var xg = el.getBoundingClientRect().left;
+              if (!groupLeft[grupo] || xg < groupLeft[grupo].x) groupLeft[grupo] = { cell: el, x: xg };
+              continue;
+            }
+            if (hasAdHoc) {
+              var n = __avCellNum(el);
+              if (n && adHoc[n]) {
+                var xn = el.getBoundingClientRect().left;
+                if (!numLeft[n] || xn < numLeft[n].x) numLeft[n] = { cell: el, x: xn };
+              }
+            }
+          }
+          if (!cornerTh && Object.keys(groupLeft).length === 0) return; // no es la pantalla
+
+          // Marca numcell SIEMPRE (atributo → no dispara el observer) para que el
+          // tintado de avería no pinte el nº ad-hoc rojo-sobre-rojo.
+          Object.keys(numLeft).forEach(function (v) {
+            if (numLeft[v].cell.getAttribute('data-cnt-numcell') !== '1') numLeft[v].cell.setAttribute('data-cnt-numcell', '1');
+          });
+
+          var wantControls = __avEditMode;
+          var addExist = document.querySelectorAll('[data-av-add]');
+          var rowExist = document.querySelectorAll('[data-av-row]');
+
+          // ¿Hace falta mutar el DOM? (idempotencia → no agitar el observer sin motivo)
+          var need = false;
+          if (cornerTh && !cornerTh.querySelector('[data-av-pencil]')) need = true;
+          if (wantControls) {
+            Object.keys(groupLeft).forEach(function (g) { if (!groupLeft[g].cell.querySelector('[data-av-add]')) need = true; });
+            Object.keys(numLeft).forEach(function (v) { if (!numLeft[v].cell.querySelector('[data-av-row]')) need = true; });
+          } else if (addExist.length || rowExist.length) {
+            need = true; // modo normal → hay que QUITAR los controles
+          }
+
+          if (need) {
+            __cntMutating = true;
+            try {
+              if (cornerTh && !cornerTh.querySelector('[data-av-pencil]')) cornerTh.appendChild(__avMakePencilBtn());
+              if (wantControls) {
+                Object.keys(groupLeft).forEach(function (g) {
+                  if (!groupLeft[g].cell.querySelector('[data-av-add]')) groupLeft[g].cell.appendChild(__avMakeAddBtn(g));
+                });
+                Object.keys(numLeft).forEach(function (v) {
+                  var cell = numLeft[v].cell;
+                  if (cell.querySelector('[data-av-row]')) return;
+                  // Insertar DENTRO del flex interior (junto al nº) → va a la derecha en
+                  // la MISMA línea y NO agranda la fila (antes iba como hermano del div
+                  // → se apilaba debajo y la fila salía el doble de alta).
+                  var host = cell.querySelector('div[class*="justify-between"]') ||
+                             (cell.firstElementChild && cell.firstElementChild.firstElementChild) || cell;
+                  host.appendChild(__avMakeRowCtrls(v));
+                });
+              } else {
+                for (var a = addExist.length - 1; a >= 0; a--) if (addExist[a].parentNode) addExist[a].parentNode.removeChild(addExist[a]);
+                for (var r = rowExist.length - 1; r >= 0; r--) if (rowExist[r].parentNode) rowExist[r].parentNode.removeChild(rowExist[r]);
+              }
+            } finally {
+              setTimeout(function () { __cntMutating = false; }, 50);
+            }
+          }
+
+          // Reflejar el modo actual en el aspecto del lápiz (write de estilo → seguro).
+          if (cornerTh) {
+            var pb = cornerTh.querySelector('[data-av-pencil]');
+            if (pb && pb.getAttribute('data-av-pencil-on') !== (__avEditMode ? '1' : '0')) __avStylePencil(pb);
           }
         } catch (e) {}
       }
@@ -1929,6 +4116,43 @@
         } catch (e) {}
       }
 
+      function unifyTableGroups() {
+        // Mark every table and row so our CSS can force uniform 40px height.
+        // Also strip any inline height/min-height that React/the bundle sets
+        // (this is what lets row 3137 stretch into the yellow gap).
+        var tables = document.querySelectorAll('table');
+        for (var t = 0; t < tables.length; t++) {
+          if (tables[t].dataset.flatTable !== '1') tables[t].dataset.flatTable = '1';
+          // Neutralise any parent that forces the table to stretch with flex/height
+          var p = tables[t].parentElement;
+          for (var depth = 0; depth < 3 && p; depth++) {
+            if (p.style && (p.style.flex || p.style.height || p.style.minHeight)) {
+              p.style.flex = '0 0 auto';
+              p.style.height = 'auto';
+              p.style.minHeight = '0';
+            }
+            p = p.parentElement;
+          }
+        }
+        var rows = document.querySelectorAll('table tr');
+        for (var r = 0; r < rows.length; r++) {
+          var row = rows[r];
+          if (row.dataset.uniformRow !== '1') row.dataset.uniformRow = '1';
+          // Remove inline height attribute and style if present
+          if (row.hasAttribute('height')) row.removeAttribute('height');
+          if (row.style.height) row.style.height = '';
+          if (row.style.minHeight) row.style.minHeight = '';
+          // Same for the cells
+          var tds = row.children;
+          for (var k = 0; k < tds.length; k++) {
+            var td = tds[k];
+            if (td.hasAttribute('height')) td.removeAttribute('height');
+            if (td.style.height) td.style.height = '';
+            if (td.style.minHeight) td.style.minHeight = '';
+          }
+        }
+      }
+
       function runInjections() {
         injectRefreshButton();
         injectPartesGlow();
@@ -1938,28 +4162,54 @@
         try { injectEstadoLocks(); } catch(e) {}
         try { injectContadores(); } catch(e) {}
         try { tintarFilasGris(); } catch(e) {}
+        try { tintarTextosAveriado(); } catch(e) {}
+        try { injectDateNav(); } catch(e) {}
+        try { injectAveriasFilter(); } catch(e) {}
+        try { injectVersionBadge(); } catch(e) {}
+        try { injectAddVehControls(); } catch(e) {}
+        try { __uaPollCandado(); } catch(e) {}
+        try { __uaInjectBadge(); } catch(e) {}
+        try { __uaInjectAjustesToggle(); } catch(e) {}
+        try { __shaveEyeZoom(); } catch(e) {}
         try { gestionarScrolliPad(); } catch(e) {}
-        try { resetZoomIfNeeded(); } catch(e) {}
-        unifyTableGroups();
+        try { unifyTableGroups(); } catch(e) {}
       }
+
+      // [PWA] Bloqueadores de doble-toque/gesture del APK OMITIDOS (peligrosos en iOS,
+      // CLAUDE.md §10). Se usa el bloqueador iOS-seguro (touchmove multi-touch) más abajo.
+
+      // Detectar que estoy editando YO en ESTE dispositivo → abrir una ventana corta
+      // para NO auto-notificarme del cambio que yo mismo provoco. Cualquier interacción
+      // de edición (cambiar un <select>, teclear en un input, o tocar una celda de la
+      // tabla) marca "edición propia" durante 12 s. El eco de mi escritura llega bien
+      // dentro de ese margen → no me avisa. Si edita OTRO, su cambio llega fuera de mi
+      // ventana → sí me avisa.
+      function __uaMarcarEdicionPropia(e) {
+        try {
+          var t = e.target;
+          if (!t) return;
+          // ¿el objetivo está dentro de una tabla de datos? (servicios o averías)
+          var n = t, dentro = false;
+          for (var i = 0; i < 8 && n; i++) { if (n.tagName === 'TABLE') { dentro = true; break; } n = n.parentNode; }
+          // Para averías el modal de edición no está en <table>; aceptamos también
+          // inputs/textarea/select genéricos (la edición de avería usa esos campos).
+          if (!dentro) {
+            var tn = (t.tagName || '');
+            if (tn !== 'INPUT' && tn !== 'SELECT' && tn !== 'TEXTAREA') return;
+          }
+          __uaSelfEditUntil = Date.now() + 12000;
+          __uaPushSelfEdit(); // que el vigilante no me devuelva el push de MI cambio
+        } catch (_) {}
+      }
+      document.addEventListener('change', __uaMarcarEdicionPropia, true);
+      document.addEventListener('input', __uaMarcarEdicionPropia, true);
+      document.addEventListener('click', __uaMarcarEdicionPropia, true);
 
       var observer = new MutationObserver(function() {
         if (__cntMutating) return;
         runInjections();
       });
       observer.observe(document.documentElement, { childList: true, subtree: true });
-      // Separate observer for rowspan attribute changes — these don't fire
-      // the childList observer above, but they're exactly what triggers the
-      // 3137 stretch bug (React lowers rowspan without clearing inline maxH).
-      var attrObserver = new MutationObserver(function() {
-        if (__cntMutating) return;
-        try { unifyTableGroups(); } catch (e) {}
-      });
-      attrObserver.observe(document.documentElement, {
-        attributes: true,
-        subtree: true,
-        attributeFilter: ['rowspan']
-      });
       document.addEventListener('DOMContentLoaded', function () {
         runInjections();
         tryRestoreNavigation();
@@ -1984,13 +4234,7 @@
         window.visualViewport.addEventListener('resize', function() {
           __lastFitScreen = '';
           __lastFitHeight = 0;
-          try { resetZoomIfNeeded(); } catch(e) {}
-          try { unifyTableGroups(); } catch(e) {}
           autoFitEyeView();
-        });
-        // Some Safari versions emit 'scroll' (not 'resize') on pinch-zoom.
-        window.visualViewport.addEventListener('scroll', function() {
-          try { resetZoomIfNeeded(); } catch(e) {}
         });
       }
     })();
