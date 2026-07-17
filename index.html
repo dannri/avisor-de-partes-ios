@@ -2,7 +2,14 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- FIX texto-no-escala (17-jul-2026): SIN minimum/maximum-scale ni
+       user-scalable=no. Ese trío es la SEÑAL que activa el "idempotent text
+       autosizing" de iOS ("la página no deja zoomear → re-inflo el texto
+       pequeño"), que mantenía el texto a tamaño completo mientras el zoom del
+       bundle encogía las celdas → filas montadas unas sobre otras. El pinch
+       nativo ya lo bloquean los listeners JS (touchmove multi-touch +
+       gesturestart), que es lo único que funcionaba en iOS 26 de todos modos. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <!-- No indexar en buscadores. La URL solo la conocen los usuarios autorizados. -->
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
   <meta name="googlebot" content="noindex, nofollow" />
@@ -38,10 +45,14 @@
     html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
     /* Block pinch-zoom on iPad Safari (iOS 26 ignores user-scalable=no) */
     html, body { touch-action: pan-x pan-y; }
-    /* FIX 3137 (capa 1): matar el font-boosting de iOS — el autosizing re-infla
-       el texto al cambiar la escala del viewport (pinch), y con texto VERTICAL
-       ese inflado se convierte en demanda de ALTURA de la celda rotada. */
-    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    /* FIX texto-no-escala (v3, 17-jul-2026): matar del todo el text autosizing
+       de iOS. Con 100% el autosizer "idempotente" (iOS 13+) sigue actuando y
+       re-inflaba el texto que el zoom CSS del bundle encogía → el texto no
+       acompañaba al zoom (como sí hace Android) y las filas se montaban.
+       'none' lo desactiva; se difunde a TODO con !important porque iOS lo
+       evalúa por elemento (el 100% heredado de html no bastó). */
+    html, body { -webkit-text-size-adjust: none !important; text-size-adjust: none !important; }
+    * { -webkit-text-size-adjust: none !important; }
 
     /* Sustituir el tinte azul claro de las filas de la tabla por gris claro.
        El bundle de la app usa Tailwind: blue-50/100 para fondos pares/impares. */
