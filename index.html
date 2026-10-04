@@ -237,6 +237,68 @@
     }
     #__gate__ button:disabled { opacity: 0.5; }
     #__gate__ .err { color: #ff6b6b; font-size: 14px; text-align: center; min-height: 20px; margin-top: 12px; }
+  
+    /* ═══ FIX 3137 v4 (oct-2026) — la etiqueta se neutraliza SOLO con CSS ═══
+       Laboratorio con el Safari REAL de iPadOS (simulador de iPad en un Mac de
+       GitHub Actions): WebKit descarga en la ÚLTIMA fila de un rowspan todo lo
+       que pide la celda de etiqueta, y una celda con writing-mode vertical
+       ("ortogonal") pide una altura ligada al viewport que NO encoge con el
+       zoom del ojo/pellizco → 3137 estirada. El fix de julio solo actuaba
+       cuando el JS ya había marcado la celda (data-av-rot): si el JS llegaba
+       tarde o fallaba, volvía el fallo. Ahora el selector usa las CLASES que
+       pone el propio bundle al crear la celda (w-8 + font-black + rowspan, solo
+       las etiquetas de grupo las llevan) → la celda NUNCA se maqueta en
+       vertical, ni en el primer pintado. El JS solo copia el texto a
+       data-av-label para pintar la etiqueta con el ::after (si fallara, la
+       etiqueta no se vería, pero la tabla jamás se estiraría).
+       Especificidad (0,3,3) + !important → gana a la regla genérica de 40px. */
+    table tbody td[rowspan].w-8.font-black,
+    table tbody td[rowspan][style*="vertical"] {
+      writing-mode: horizontal-tb !important;
+      -webkit-writing-mode: horizontal-tb !important;
+      font-size: 0 !important;
+      line-height: 0 !important;
+      color: transparent !important;
+      padding: 0 !important;
+      height: auto !important;
+      max-height: none !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+    }
+    table tbody td[rowspan].w-8.font-black::after,
+    table tbody td[rowspan][style*="vertical"]::after {
+      content: attr(data-av-label);
+      display: flex;
+      height: 0;
+      width: 20px;
+      overflow: visible;
+      align-items: center;
+      justify-content: center;
+      writing-mode: vertical-lr;
+      -webkit-writing-mode: vertical-lr;
+      font-size: 9px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      color: #374151;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    table tbody td[rowspan].w-8.font-black > *,
+    table tbody td[rowspan][style*="vertical"] > * { font-size: 13px; line-height: normal; }
+    /* Zoom PROPORCIONAL en Safari/WebKit (ver __avZoomTransform en el script):
+       el zoom del ojo/pellizco se pinta como transform:scale → aquí se anula el
+       CSS zoom de ese div. Sin la clase (JS caído) esta regla no hace nada. */
+    html.av-zoom-transform div.flex.flex-col.h-full[style*="zoom"] { zoom: 1 !important; }
+    /* La escala y la compensación de tamaño van AQUÍ con !important (variable
+       --avz que pone el JS): así ninguna escritura en línea de otra inyección
+       (p. ej. height:auto) puede pisarlas y dejar la tabla sin scroll. */
+    html.av-zoom-transform div.flex.flex-col.h-full[data-avz] {
+      transform: scale(var(--avz)) !important;
+      transform-origin: 0 0 !important;
+      width: calc(100% / var(--avz)) !important;
+      height: calc(100% / var(--avz)) !important;
+    }
   </style>
 </head>
 <body>
@@ -1580,8 +1642,14 @@
 
       var __lastFitScreen = '';
       function autoFitEyeView() {
-        var label = getCurrentScreenLabel();
-        if (!label) { __lastFitScreen = ''; return; }
+        // v1.9.4G: la pantalla se identifica por el TÍTULO de la barra del bundle
+        // (.sticky span.truncate: "ESTADO COMPLETO", "SERVICIO NOCHE"…). Antes era
+        // "el texto más largo arriba", que cambiaba con el zoom → al pulsar
+        // "Tamaño normal" el ojo se volvía a encender solo. Solo se rearma al
+        // volver a la portada (sin botón MENÚ).
+        var navLbl = document.querySelector('.sticky span.truncate');
+        var label = navLbl ? (navLbl.textContent || '').trim() : getCurrentScreenLabel();
+        if (!label) { if (!findMenuBackButton()) __lastFitScreen = ''; return; }
         var up = stripDiacritics(label.toUpperCase());
         var isTarget = up.indexOf('NOCHE') !== -1 ||
                        up.indexOf('URBAN') !== -1 ||
@@ -3649,6 +3717,7 @@
       // existe el botón MENU). Para añadir una versión nueva: meterla la PRIMERA
       // en el array __VERSION_HISTORY (el [0] es la versión actual del badge).
       var __VERSION_HISTORY = [
+        'v1.9.4G',
         'v1.9G',
         'v1.8.2',
         'v1.8.1',
@@ -3821,25 +3890,90 @@
       // AÑADIR: escribe en el doc de NOCHE de hoy (basta para que salga en todas las pantallas).
       // NO escribe registros.<vid> (una registro ausente se pinta en blanco y editable):
       // así, si por una carrera el vid ya existiera, NUNCA le borramos sus datos.
+      // v1.9.4G: helpers del canónico (v2.1) para que el "+" siembre vehiculosOrden
+      var __AV_FLEET_ORDEN = ['3023','3038','3053','3054','3078','3079','3086','3087','3104','3105','3106','3107','3115','3116','3117','3129','3136','3137','3085','3135'];
+      function __avIso(s) {
+        if (!s) return null;
+        var p = String(s).split(/[\/\-]/);
+        if (p.length !== 3) return null;
+        function pad(x) { x = String(parseInt(x, 10)); return x.length < 2 ? '0' + x : x; }
+        if (p[0].length === 4) return p[0] + '-' + pad(p[1]) + '-' + pad(p[2]);
+        return p[2] + '-' + pad(p[1]) + '-' + pad(p[0]);
+      }
+      function __avHoyIso() {
+        var d = new Date();
+        function pad(x) { return (x < 10 ? '0' : '') + x; }
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+      }
+      var __avCtxMemo = null, __avCtxMemoT = 0;
+      function __avDiaCtx(fresco) {
+        var now = Date.now();
+        if (!fresco && __avCtxMemo && now - __avCtxMemoT < 120) return __avCtxMemo;
+        var ctx = { fechaStr: null, iso: null, esHoy: false, cargado: false,
+                    docs: { NOCHE: null, URBANIZACIONES: null, TARDE: null },
+                    enOrden: {}, grupoDatos: {}, ocultosDia: {}, mostrarDia: {} };
+        try {
+          ctx.fechaStr = __lkFechaStrActual();
+          ctx.iso = __avIso(ctx.fechaStr);
+          ctx.esHoy = !!ctx.iso && ctx.iso === __avHoyIso();
+          var srv = __lkReadServicios();
+          ctx.cargado = !!(srv && srv.length);
+          var clave = __lkFechaKey(ctx.fechaStr);
+          if (srv && clave) {
+            for (var i = 0; i < srv.length; i++) {
+              var s = srv[i];
+              if (s && ctx.docs.hasOwnProperty(s.turno) && __lkFechaKey(s.fechaStr) === clave && !ctx.docs[s.turno]) ctx.docs[s.turno] = s;
+            }
+          }
+          ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
+            var d = ctx.docs[t]; if (!d) return;
+            (d.vehiculosOrden || []).forEach(function (v) { v = String(v); if (v) ctx.enOrden[v] = 1; });
+            if (d.gruposCustom) Object.keys(d.gruposCustom).forEach(function (v) { if (!ctx.grupoDatos[v]) ctx.grupoDatos[v] = d.gruposCustom[v]; });
+            if (d.avOcultosDia) Object.keys(d.avOcultosDia).forEach(function (v) { if (d.avOcultosDia[v]) ctx.ocultosDia[v] = 1; });
+            if (d.avMostrarDia) Object.keys(d.avMostrarDia).forEach(function (v) { if (d.avMostrarDia[v]) ctx.mostrarDia[v] = 1; });
+          });
+        } catch (e) {}
+        __avCtxMemo = ctx; __avCtxMemoT = now;
+        return ctx;
+      }
+      function __avSemillaOrden(ctx) {
+        var base = null;
+        ['URBANIZACIONES', 'TARDE'].forEach(function (t) {
+          var d = ctx.docs[t];
+          if (!base && d && Array.isArray(d.vehiculosOrden) && d.vehiculosOrden.length) base = d.vehiculosOrden.slice();
+        });
+        return base || __AV_FLEET_ORDEN.slice();
+      }
+      function __avInsertarDia(db, ctx, lista, extraCampos) {
+        var FV = firebase.firestore.FieldValue;
+        var vids = lista.map(function (x) { return x.vid; });
+        var noche = ctx.docs.NOCHE;
+        var k;
+        if (noche) {
+          var upd = { vehiculosOrden: FV.arrayUnion.apply(null, vids) };
+          lista.forEach(function (x) { upd['gruposCustom.' + x.vid] = x.grupo; });
+          if (extraCampos) for (k in extraCampos) upd[k] = extraCampos[k];
+          return __lkServicioDocRef(db, noche.id).update(upd);
+        }
+        if (!ctx.fechaStr) return Promise.reject(new Error('sin fecha'));
+        var gc = {}; lista.forEach(function (x) { gc[x.vid] = x.grupo; });
+        var payload = { turno: 'NOCHE', fechaStr: ctx.fechaStr, timestamp: Date.now(),
+                        vehiculosOrden: FV.arrayUnion.apply(null, __avSemillaOrden(ctx).concat(vids)),
+                        gruposCustom: gc };
+        if (extraCampos) for (k in extraCampos) if (k !== 'ultimaActServicio') payload[k] = extraCampos[k];
+        return __lkServicioDocRef(db, 'NOCHE_' + ctx.fechaStr.replace(/\//g, '-')).set(payload, { merge: true });
+      }
       function __avAdd(vid, grupo) {
         vid = String(vid || '').trim().toUpperCase();
         if (!vid) return;
         if (!__avValidVid(vid)) { __lkShowAlert('Número no válido. Usa solo letras y números (sin espacios ni puntos).'); return; }
         if (__avVidPresente(vid)) { __lkShowAlert('El vehículo ' + vid + ' ya está en la lista.'); return; }
         __avRunWrite('Añadiendo…', function (db) {
-          var fStr = __lkFechaStrActual(); if (!fStr) throw new Error('sin fecha');
-          var noche = __avDocsHoy().NOCHE;
-          var FV = firebase.firestore.FieldValue;
-          if (noche) {
-            var ref = __lkServicioDocRef(db, noche.id); // id REAL del doc en memoria
-            var upd = { vehiculosOrden: FV.arrayUnion(vid) };
-            upd['gruposCustom.' + vid] = grupo;
-            return ref.update(upd);
-          }
-          var ref2 = __lkServicioDocRef(db, 'NOCHE_' + fStr.replace(/\//g, '-'));
-          var payload = { turno: 'NOCHE', fechaStr: fStr, timestamp: Date.now(), vehiculosOrden: FV.arrayUnion(vid), gruposCustom: {} };
-          payload.gruposCustom[vid] = grupo;
-          return ref2.set(payload, { merge: true });
+          var ctx = __avDiaCtx(true);
+          if (!ctx.fechaStr) throw new Error('sin fecha');
+          // v2.1: __avInsertarDia siembra vehiculosOrden como el bundle al CREAR el
+          // doc (antes quedaba solo [vid] → EDITAR VEHÍCULOS de ese día salía vacío).
+          return __avInsertarDia(db, ctx, [{ vid: vid, grupo: grupo }]);
         }, 'No se pudo añadir el vehículo.');
       }
       // QUITAR: limpia el vid en TODOS los turnos de hoy donde esté (por si se editó en varios).
@@ -4253,7 +4387,13 @@
           if (!label) continue;
           if (td.getAttribute('data-av-label') !== label) td.setAttribute('data-av-label', label);
           if (!marcada) {
+            // v4: con el CSS E1 la celda ya nace horizontal → normalmente NO hace
+            // falta kick (que además devolvía el scroll arriba). Solo si el CSS no
+            // la cubrió y llegó a maquetarse en vertical.
+            var eraVertical = false;
+            try { eraVertical = (getComputedStyle(td).writingMode || '').indexOf('vertical') === 0; } catch (eV) {}
             td.setAttribute('data-av-rot', '1');
+            if (!eraVertical) continue;
             // apuntar su tabla para el kick de relayout
             var tb = td.parentNode;
             while (tb && tb.tagName !== 'TABLE') tb = tb.parentNode;
@@ -4292,6 +4432,10 @@
           // Neutralise any parent that forces the table to stretch with flex/height
           var p = tables[t].parentElement;
           for (var depth = 0; depth < 3 && p; depth++) {
+            // v4: la raíz del zoom (div.flex.flex-col.h-full con zoom en línea) NO se
+            // toca: su tamaño lo gobierna el zoom proporcional (height:auto aquí le
+            // quitaba el scroll a la tabla).
+            if (p.matches && p.matches('div.flex.flex-col.h-full[style*="zoom"]')) { p = p.parentElement; continue; }
             if (p.style && (p.style.flex || p.style.height || p.style.minHeight)) {
               p.style.flex = '0 0 auto';
               p.style.height = 'auto';
@@ -4319,12 +4463,145 @@
         }
       }
 
+
+      // ═══ VIGILANTE 3137 (v4, oct-2026) — red de seguridad ═══
+      // Si pese al CSS E1 la ÚLTIMA fila de un grupo (donde WebKit descarga el
+      // exceso de la celda de etiqueta) sale mucho más alta que el resto del
+      // grupo: relayout de la tabla (kick, conservando el scroll) y, si se curó
+      // y el ojo está activo, evento resize para que el bundle recalcule su
+      // zoom con la tabla ya sana. Límites: 1 cada 500 ms, 5 cada 10 s, 30 por
+      // sesión. Registro en localStorage 'avisor_3137_log' (diagnóstico). Solo
+      // lee offsetHeight y escribe estilos/atributos → no dispara el observer.
+      var __av3137Kicks = [], __av3137Total = 0;
+      function __avKick3137(tabla, tr, h, med) {
+        var ahora = Date.now();
+        __av3137Kicks = __av3137Kicks.filter(function (t) { return ahora - t < 10000; });
+        if (__av3137Total >= 30 || __av3137Kicks.length >= 5) return;
+        if (__av3137Kicks.length && ahora - __av3137Kicks[__av3137Kicks.length - 1] < 500) return;
+        __av3137Kicks.push(ahora); __av3137Total++;
+        var sc = tabla.closest ? tabla.closest('[data-scroll-container]') : null;
+        var st = sc ? sc.scrollTop : 0, sl = sc ? sc.scrollLeft : 0;
+        var dPrev = tabla.style.display;
+        tabla.style.display = 'none'; void tabla.offsetWidth;
+        tabla.style.display = dPrev || ''; void tabla.offsetWidth;
+        if (sc) { sc.scrollTop = st; sc.scrollLeft = sl; }
+        var despues = tr.offsetHeight;
+        var curada = despues <= Math.max(med * 1.6, med + 12);
+        if (!curada) tr.__avNoCura = despues;   // no repetir mientras siga igual
+        try {
+          var raiz = tabla.closest ? tabla.closest('div.flex.flex-col.h-full') : null;
+          var log = JSON.parse(localStorage.getItem('avisor_3137_log') || '[]');
+          log.push({ t: new Date().toISOString(), veh: ((tr.textContent || '').match(/\d{4}/) || [''])[0],
+            h: h, med: med, despues: despues, curada: curada, zoom: raiz ? raiz.style.zoom : '',
+            ua: (navigator.userAgent || '').slice(0, 110) });
+          if (log.length > 20) log = log.slice(-20);
+          localStorage.setItem('avisor_3137_log', JSON.stringify(log));
+        } catch (eL) {}
+        try { document.documentElement.setAttribute('data-av3137', String(__av3137Total)); } catch (eA) {}
+        if (curada && document.querySelector('button[title="Tamaño normal"]')) {
+          try { window.dispatchEvent(new Event('resize')); } catch (eR) {}
+        }
+      }
+      function __avVigila3137() {
+        var celdas = document.querySelectorAll('table tbody td[rowspan]');
+        var vistos = {};
+        for (var i = 0; i < celdas.length; i++) {
+          var td = celdas[i];
+          if (td.rowSpan < 2) continue;
+          var tr = td.parentElement, tb = tr && tr.parentElement;
+          if (!tb || tb.tagName !== 'TBODY') continue;
+          var ini = tr.sectionRowIndex, fin = ini + td.rowSpan - 1;
+          if (ini < 0 || fin >= tb.rows.length) continue;
+          var clave = ini + '-' + fin;
+          if (vistos[clave]) continue;   // 3 etiquetas por grupo en ESTADO COMPLETO
+          vistos[clave] = 1;
+          var hs = [];
+          for (var r = ini; r < fin; r++) hs.push(tb.rows[r].offsetHeight);
+          hs.sort(function (a, b) { return a - b; });
+          var med = hs[Math.floor(hs.length / 2)];
+          var ult = tb.rows[fin];
+          var hUlt = ult.offsetHeight;
+          if (!(med > 0 && hUlt > Math.max(med * 1.6, med + 12))) continue;
+          // ¿la explica su PROPIO contenido (p. ej. un texto largo en OTROS)? → no es el bug
+          var contenido = 0;
+          for (var c = 0; c < ult.cells.length; c++) {
+            var cel = ult.cells[c];
+            if (cel.rowSpan > 1) continue;
+            var hc = cel.firstElementChild ? cel.firstElementChild.offsetHeight : 0;
+            if (hc > contenido) contenido = hc;
+          }
+          if (hUlt <= contenido + 12) continue;
+          // ya se intentó con esta misma altura y no se curó → no insistir (ni tocar el scroll)
+          if (ult.__avNoCura === hUlt) continue;
+          __avKick3137(tb.parentElement, ult, hUlt, med);
+          return;
+        }
+      }
+
+      // ═══ ZOOM PROPORCIONAL en iOS (v4, oct-2026) — zoom CSS → transform:scale ═══
+      // El ojo y el pellizco del bundle encogen la tabla con CSS 'zoom' en el div
+      // raíz de la tabla (div.flex.flex-col.h-full, style={zoom}). En Android y
+      // Windows eso encoge TODO por igual; en el WebKit de iOS/iPadOS encoge las
+      // CAJAS pero el TEXTO no baja del tamaño mínimo de letra (9 px de pantalla)
+      // → los textos se parten en 2 líneas, esas filas crecen y la tabla pierde
+      // la proporción. Además ese zoom es lo que dispara el bug del 3137.
+      // Solución (solo en Safari/WebKit): el CSS anula el zoom en ese div
+      // (html.av-zoom-transform ... {zoom:1 !important}) y aquí se pinta como
+      // transform:scale(z) con ancho/alto compensados (100%/z): la tabla se
+      // maqueta a tamaño normal y se dibuja encogida EN BLOQUE, exactamente
+      // proporcional, como en Android/Windows. Un MutationObserver de ATRIBUTOS
+      // sobre ese div traduce cada cambio de zoom al instante (microtarea, antes
+      // de pintar → sin parpadeo). Si este JS fallara, la tabla no se encoge
+      // pero nunca se deforma.
+      var __avZT = /Apple/.test(navigator.vendor || '');   // Safari y todos los navegadores de iOS
+      if (__avZT) { try { document.documentElement.classList.add('av-zoom-transform'); } catch (eZ) {} }
+      var __avZTobs = null;
+      // Solo escribe la variable --avz y el atributo data-avz; la escala y el
+      // tamaño compensado los pone el CSS con !important (no se pueden pisar).
+      // Idempotente: compara antes de escribir → el observer de atributos no
+      // se realimenta (data-avz ni siquiera está en su filtro).
+      function __avZTaplicar(el) {
+        try {
+          var z = parseFloat(el.style.zoom);
+          if (!z || !isFinite(z) || z <= 0) z = 1;
+          if (Math.abs(z - 1) < 0.0005) {
+            if (el.hasAttribute('data-avz')) el.removeAttribute('data-avz');
+            if (el.style.getPropertyValue('--avz')) el.style.removeProperty('--avz');
+            return;
+          }
+          var zs = String(Math.round(z * 100000) / 100000);
+          if (el.style.getPropertyValue('--avz').trim() !== zs) el.style.setProperty('--avz', zs);
+          if (el.getAttribute('data-avz') !== zs) el.setAttribute('data-avz', zs);
+        } catch (eA) {}
+      }
+      function __avZoomTransform() {
+        if (!__avZT) return;
+        if (!__avZTobs && window.MutationObserver) {
+          __avZTobs = new MutationObserver(function (recs) {
+            for (var i = 0; i < recs.length; i++) __avZTaplicar(recs[i].target);
+          });
+        }
+        var raices = document.querySelectorAll('div.flex.flex-col.h-full[style*="zoom"]');
+        for (var i = 0; i < raices.length; i++) {
+          var el = raices[i];
+          if (!el.__avZTobservado && __avZTobs) {
+            el.__avZTobservado = true;
+            __avZTobs.observe(el, { attributes: true, attributeFilter: ['style'] });
+          }
+          __avZTaplicar(el);
+        }
+      }
+
       function runInjections() {
-        injectRefreshButton();
-        injectPartesGlow();
-        replaceBgWithSVG();
-        autoFitEyeView();
-        fixTextoEditMode();
+        // v4: lo del 3137 lo PRIMERO (antes no se llegaba si algo de arriba fallaba)
+        try { __avZoomTransform(); } catch(e) {}   // v4: zoom proporcional en Safari
+        try { fijarEtiquetasRotadas(); } catch(e) {}
+        try { unifyTableGroups(); } catch(e) {}
+        try { injectRefreshButton(); } catch(e) {}
+        try { injectPartesGlow(); } catch(e) {}
+        try { replaceBgWithSVG(); } catch(e) {}
+        try { autoFitEyeView(); } catch(e) {}
+        try { fixTextoEditMode(); } catch(e) {}
         try { injectEstadoLocks(); } catch(e) {}
         try { injectContadores(); } catch(e) {}
         try { tintarFilasGris(); } catch(e) {}
@@ -4338,8 +4615,7 @@
         try { __uaInjectAjustesToggle(); } catch(e) {}
         try { __shaveEyeZoom(); } catch(e) {}
         try { gestionarScrolliPad(); } catch(e) {}
-        try { fijarEtiquetasRotadas(); } catch(e) {}
-        try { unifyTableGroups(); } catch(e) {}
+        try { __avVigila3137(); } catch(e) {}   // v4: red de seguridad (al final, con todo pintado)
       }
 
       // [PWA] Bloqueadores de doble-toque/gesture del APK OMITIDOS (peligrosos en iOS,
@@ -4373,6 +4649,9 @@
       document.addEventListener('click', __uaMarcarEdicionPropia, true);
 
       var observer = new MutationObserver(function() {
+        // v4: marcar etiquetas aunque otra inyección esté mutando (solo escribe
+        // atributos → no realimenta el observer, que mira childList)
+        try { fijarEtiquetasRotadas(); } catch(e) {}
         if (__cntMutating) return;
         runInjections();
       });
@@ -4399,7 +4678,9 @@
       // Fallback: if zoom still happens somehow, reset on viewport resize
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', function() {
-          __lastFitScreen = '';
+          // v1.9.4G: ya NO se rearma el ojo aquí (lo volvía a encender si el
+          // usuario lo había apagado). Con el ojo encendido, el propio bundle
+          // recalcula el zoom en su listener de resize (girar el iPad, etc.).
           __lastFitHeight = 0;
           autoFitEyeView();
         });
