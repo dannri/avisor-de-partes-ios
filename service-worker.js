@@ -11,7 +11,7 @@
  *
  * To force users to pick up new ASSETS: bump CACHE_VERSION.
  */
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 const CACHE_NAME = 'avisor-de-partes-ios-' + CACHE_VERSION;
 const RED_TIMEOUT_MS = 4000;
 

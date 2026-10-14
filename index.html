@@ -299,6 +299,22 @@
       width: calc(100% / var(--avz)) !important;
       height: calc(100% / var(--avz)) !important;
     }
+    /* Camiones QUITADOS (parche-ocultos, v1.9.5G): __avAplicarOcultos marca la
+       fila con data-av-oculto; se queda en la tabla (no rompe el rowspan de la
+       etiqueta) pero a 0 px. Gana a las reglas de 40 px de data-uniform-row. */
+    /* transition:none → hay celdas con transition-all que el bundle reinicia sin parar
+       y se quedarían a 40 px (las transiciones ganan a !important; visto en vivo). */
+    table tbody tr[data-av-oculto] { height: 0 !important; min-height: 0 !important; max-height: 0 !important; transition: none !important; }
+    table tbody tr[data-av-oculto] > td:not([rowspan]), table tbody tr[data-av-oculto] > td[rowspan="1"],
+    table tbody tr[data-av-oculto] > th:not([rowspan]), table tbody tr[data-av-oculto] > th[rowspan="1"] {
+      visibility: hidden !important; font-size: 0 !important; line-height: 0 !important;
+      padding-top: 0 !important; padding-bottom: 0 !important;
+      border-top-width: 0 !important; border-bottom-width: 0 !important;
+      height: 0 !important; min-height: 0 !important; max-height: 0 !important;
+      transition: none !important;
+    }
+    table tbody tr[data-av-oculto] > td:not([rowspan]) *, table tbody tr[data-av-oculto] > td[rowspan="1"] *,
+    table tbody tr[data-av-oculto] > th:not([rowspan]) *, table tbody tr[data-av-oculto] > th[rowspan="1"] * { display: none !important; }
   </style>
 </head>
 <body>
@@ -3066,6 +3082,7 @@
 
         for (var j = 0; j < trs.length; j++) {
           var tr = trs[j];
+          if (tr.getAttribute('data-av-oculto')) continue;   // v1.9.5G: camión quitado → no cuenta
           var tds = tr.children;
           if (!tds || tds.length === 0) continue;
           var esAverFila = __cntEsAveriadoDOM(tr);
@@ -3717,6 +3734,7 @@
       // existe el botón MENU). Para añadir una versión nueva: meterla la PRIMERA
       // en el array __VERSION_HISTORY (el [0] es la versión actual del badge).
       var __VERSION_HISTORY = [
+        'v1.9.5G',
         'v1.9.4G',
         'v1.9G',
         'v1.8.2',
@@ -4516,7 +4534,7 @@
           if (vistos[clave]) continue;   // 3 etiquetas por grupo en ESTADO COMPLETO
           vistos[clave] = 1;
           var hs = [];
-          for (var r = ini; r < fin; r++) hs.push(tb.rows[r].offsetHeight);
+          for (var r = ini; r < fin; r++) { if (tb.rows[r].hasAttribute('data-av-oculto')) continue; hs.push(tb.rows[r].offsetHeight); }
           hs.sort(function (a, b) { return a - b; });
           var med = hs[Math.floor(hs.length / 2)];
           var ult = tb.rows[fin];
@@ -4592,6 +4610,123 @@
         }
       }
 
+      // ═══ Camiones QUITADOS (parche-ocultos, v1.9.5G) ═══
+      // Copiado TAL CUAL del canónico (v2.1 + cambio de oct-2026): lee la config
+      // compartida (avisor_config/flota) y las marcas del día, y oculta esas filas en
+      // todas las pantallas de servicios. Rama G → solo lectura (sin auto-inserción).
+      var __AV_CFG_LS = 'avisor_flota_cfg';
+      var __avCfg = null;
+      var __avCfgVivo = false;
+      var __avCfgArrancado = false;
+      var __avCfgReintentoEn = 0;
+      function __avCfgNorm(d) {
+        var out = { extra: {}, ocultos: {} };
+        try {
+          var ex = (d && d.extra) || {};
+          Object.keys(ex).forEach(function (v) {
+            var e = ex[v];
+            if (!__avValidVid(v) || !e || typeof e !== 'object') return;
+            out.extra[v] = { grupo: (e.grupo === 'TRASERAS' ? 'TRASERAS' : 'LATERALES'),
+                             desde: (typeof e.desde === 'string' ? e.desde : '0000-00-00') };
+          });
+          var oc = (d && d.ocultos) || {};
+          Object.keys(oc).forEach(function (v) {
+            var o = oc[v];
+            if (!__avValidVid(v) || !o || typeof o !== 'object') return;
+            out.ocultos[v] = { desde: (typeof o.desde === 'string' ? o.desde : '0000-00-00') };
+          });
+        } catch (e) {}
+        return out;
+      }
+      function __avCfgGet() {
+        if (!__avCfg) {
+          var c = null;
+          try { c = JSON.parse(localStorage.getItem(__AV_CFG_LS) || 'null'); } catch (e) {}
+          __avCfg = __avCfgNorm(c);
+        }
+        return __avCfg;
+      }
+      function __avCfgRef(db) {
+        return db.collection('artifacts').doc(__UA_APPID)
+                 .collection('public').doc('data')
+                 .collection('avisor_config').doc('flota');
+      }
+      function __avCfgArrancar() {
+        if (__avCfgArrancado || Date.now() < __avCfgReintentoEn) return;
+        __avCfgArrancado = true;
+        function fallo() { __avCfgArrancado = false; __avCfgReintentoEn = Date.now() + 30000; }
+        __uaEnsureFirebase().then(function () {
+          var db = __uaInitFirebase();
+          if (!db) { fallo(); return; }
+          __avCfgRef(db).onSnapshot(function (snap) {
+            try {
+              __avCfg = __avCfgNorm(snap.exists ? snap.data() : null);
+              __avCfgVivo = true;
+              __avCtxMemo = null;
+              try { localStorage.setItem(__AV_CFG_LS, JSON.stringify(__avCfg)); } catch (e2) {}
+            } catch (e) {}
+          }, fallo);
+        }).catch(fallo);
+      }
+      function __avEstadoVid(vid, ctx) {
+        var cfg = __avCfgGet();
+        var st = { vid: vid, fija: !!__AV_FLEET[vid], extra: cfg.extra[vid] || null,
+                   enOrden: !!ctx.enOrden[vid], ocultoHoy: !!ctx.ocultosDia[vid],
+                   mostrarHoy: !!ctx.mostrarDia[vid], ocultoPerm: null };
+        var op = cfg.ocultos[vid];
+        st.ocultoPerm = (op && ctx.iso && ctx.iso >= op.desde) ? op : null;
+        st.oculto = st.ocultoHoy || (!!st.ocultoPerm && !st.mostrarHoy);
+        st.adhoc = st.enOrden && !st.fija && !st.extra;   // añadido solo para este día
+        return st;
+      }
+      function __avFilaVid(tr, conocidos) {
+        var tds = tr.children;
+        for (var i = 0; i < tds.length; i++) {
+          if (tds[i].hasAttribute('rowspan')) continue;   // etiqueta de grupo
+          var n = __avCellNum(tds[i]);
+          if (n && conocidos[n]) return n;
+        }
+        return null;
+      }
+      function __avAplicarOcultos() {
+        try {
+          if (!__uaTurnoPantallaIndividual() && !__uaEsEstadoCompleto()) return;
+          __avCfgArrancar();
+          var ctx = __avDiaCtx();
+          if (!ctx.iso) return;
+          var conocidos = {};
+          Object.keys(__AV_FLEET).forEach(function (v) { conocidos[v] = 1; });
+          Object.keys(ctx.enOrden).forEach(function (v) { conocidos[v] = 1; });
+
+          var trs = document.querySelectorAll('table tbody tr');
+          var filas = [], gi = -1, restantes = 0, i, c;
+          for (i = 0; i < trs.length; i++) {
+            var tr = trs[i], lab = null;
+            for (c = 0; c < tr.children.length; c++) { if (tr.children[c].hasAttribute('rowspan')) { lab = tr.children[c]; break; } }
+            var primera = false;
+            if (lab) { gi++; restantes = Math.max(1, parseInt(lab.getAttribute('rowspan'), 10) || 1); primera = true; }
+            var vid = __avFilaVid(tr, conocidos);
+            filas.push({ tr: tr, oculto: !!vid && __avEstadoVid(vid, ctx).oculto, grupo: (restantes > 0 ? gi : -1), primera: primera });
+            if (restantes > 0) restantes--;
+          }
+          var todoOculto = {};
+          filas.forEach(function (f) {
+            if (f.grupo < 0) return;
+            if (!(f.grupo in todoOculto)) todoOculto[f.grupo] = true;
+            if (!f.oculto) todoOculto[f.grupo] = false;
+          });
+          filas.forEach(function (f) {
+            var want = '';
+            if (f.oculto) want = (f.primera && f.grupo >= 0 && !todoOculto[f.grupo]) ? 'vaciar' : 'collapse';
+            if ((f.tr.getAttribute('data-av-oculto') || '') !== want) {
+              if (want) f.tr.setAttribute('data-av-oculto', want); else f.tr.removeAttribute('data-av-oculto');
+            }
+          });
+
+          if (!__AV_RAMA_G && ctx.esHoy && ctx.cargado && __avCfgVivo) __avAutoInsertar(ctx);
+        } catch (e) {}
+      }
+
       function runInjections() {
         // v4: lo del 3137 lo PRIMERO (antes no se llegaba si algo de arriba fallaba)
         try { __avZoomTransform(); } catch(e) {}   // v4: zoom proporcional en Safari
@@ -4603,6 +4738,7 @@
         try { autoFitEyeView(); } catch(e) {}
         try { fixTextoEditMode(); } catch(e) {}
         try { injectEstadoLocks(); } catch(e) {}
+        try { __avAplicarOcultos(); } catch(e) {}   // v1.9.5G: camiones quitados (antes de los contadores)
         try { injectContadores(); } catch(e) {}
         try { tintarFilasGris(); } catch(e) {}
         try { tintarTextosAveriado(); } catch(e) {}
