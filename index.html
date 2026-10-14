@@ -315,6 +315,15 @@
     }
     table tbody tr[data-av-oculto] > td:not([rowspan]) *, table tbody tr[data-av-oculto] > td[rowspan="1"] *,
     table tbody tr[data-av-oculto] > th:not([rowspan]) *, table tbody tr[data-av-oculto] > th[rowspan="1"] * { display: none !important; }
+    /* Botón "camiones quitados" del modo edición (parche-vehiculos, v2.2.5G) */
+    button[data-av-ocultos]::after {
+      content: attr(data-n);
+      position: absolute; top: -7px; right: -8px;
+      min-width: 15px; height: 15px; padding: 0 3px; box-sizing: border-box;
+      border-radius: 9999px; background: #475569; color: #fff;
+      font-size: 9px; font-weight: 900; line-height: 15px; text-align: center;
+    }
+    button[data-av-ocultos][data-n="0"] { display: none !important; }
   </style>
 </head>
 <body>
@@ -3734,6 +3743,7 @@
       // existe el botón MENU). Para añadir una versión nueva: meterla la PRIMERA
       // en el array __VERSION_HISTORY (el [0] es la versión actual del badge).
       var __VERSION_HISTORY = [
+        'v2.2.5G',
         'v2.2.4G',
         'v1.9.4G',
         'v1.9G',
@@ -3854,9 +3864,10 @@
 
       // Flota permanente (R0 ∪ C0 del bundle). Estas filas NO son borrables/editables:
       // solo las AD-HOC (vid que NO está aquí) llevan controles ×/✎.
+      // ═══ Vehículos (parche-vehiculos, v2.2.5G): bloque COPIADO TAL CUAL del canónico ═══
+      var __AV_FLEET_ORDEN = ['3023','3038','3053','3054','3078','3079','3086','3087','3104','3105','3106','3107','3115','3116','3117','3129','3136','3137','3085','3135'];
       var __AV_FLEET = {};
-      ['3023','3038','3053','3054','3078','3079','3086','3087','3104','3105','3106','3107','3115','3116','3117','3129','3136','3137','3085','3135']
-        .forEach(function (v) { __AV_FLEET[v] = 1; });
+      __AV_FLEET_ORDEN.forEach(function (v) { __AV_FLEET[v] = 1; });
 
       function __avBlank() { return { estado: null, cargaNo: false, cargaSiTipo: '', otros: '' }; }
 
@@ -3908,79 +3919,6 @@
       // AÑADIR: escribe en el doc de NOCHE de hoy (basta para que salga en todas las pantallas).
       // NO escribe registros.<vid> (una registro ausente se pinta en blanco y editable):
       // así, si por una carrera el vid ya existiera, NUNCA le borramos sus datos.
-      // v1.9.4G: helpers del canónico (v2.1) para que el "+" siembre vehiculosOrden
-      var __AV_FLEET_ORDEN = ['3023','3038','3053','3054','3078','3079','3086','3087','3104','3105','3106','3107','3115','3116','3117','3129','3136','3137','3085','3135'];
-      function __avIso(s) {
-        if (!s) return null;
-        var p = String(s).split(/[\/\-]/);
-        if (p.length !== 3) return null;
-        function pad(x) { x = String(parseInt(x, 10)); return x.length < 2 ? '0' + x : x; }
-        if (p[0].length === 4) return p[0] + '-' + pad(p[1]) + '-' + pad(p[2]);
-        return p[2] + '-' + pad(p[1]) + '-' + pad(p[0]);
-      }
-      function __avHoyIso() {
-        var d = new Date();
-        function pad(x) { return (x < 10 ? '0' : '') + x; }
-        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-      }
-      var __avCtxMemo = null, __avCtxMemoT = 0;
-      function __avDiaCtx(fresco) {
-        var now = Date.now();
-        if (!fresco && __avCtxMemo && now - __avCtxMemoT < 120) return __avCtxMemo;
-        var ctx = { fechaStr: null, iso: null, esHoy: false, cargado: false,
-                    docs: { NOCHE: null, URBANIZACIONES: null, TARDE: null },
-                    enOrden: {}, grupoDatos: {}, ocultosDia: {}, mostrarDia: {} };
-        try {
-          ctx.fechaStr = __lkFechaStrActual();
-          ctx.iso = __avIso(ctx.fechaStr);
-          ctx.esHoy = !!ctx.iso && ctx.iso === __avHoyIso();
-          var srv = __lkReadServicios();
-          ctx.cargado = !!(srv && srv.length);
-          var clave = __lkFechaKey(ctx.fechaStr);
-          if (srv && clave) {
-            for (var i = 0; i < srv.length; i++) {
-              var s = srv[i];
-              if (s && ctx.docs.hasOwnProperty(s.turno) && __lkFechaKey(s.fechaStr) === clave && !ctx.docs[s.turno]) ctx.docs[s.turno] = s;
-            }
-          }
-          ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
-            var d = ctx.docs[t]; if (!d) return;
-            (d.vehiculosOrden || []).forEach(function (v) { v = String(v); if (v) ctx.enOrden[v] = 1; });
-            if (d.gruposCustom) Object.keys(d.gruposCustom).forEach(function (v) { if (!ctx.grupoDatos[v]) ctx.grupoDatos[v] = d.gruposCustom[v]; });
-            if (d.avOcultosDia) Object.keys(d.avOcultosDia).forEach(function (v) { if (d.avOcultosDia[v]) ctx.ocultosDia[v] = 1; });
-            if (d.avMostrarDia) Object.keys(d.avMostrarDia).forEach(function (v) { if (d.avMostrarDia[v]) ctx.mostrarDia[v] = 1; });
-          });
-        } catch (e) {}
-        __avCtxMemo = ctx; __avCtxMemoT = now;
-        return ctx;
-      }
-      function __avSemillaOrden(ctx) {
-        var base = null;
-        ['URBANIZACIONES', 'TARDE'].forEach(function (t) {
-          var d = ctx.docs[t];
-          if (!base && d && Array.isArray(d.vehiculosOrden) && d.vehiculosOrden.length) base = d.vehiculosOrden.slice();
-        });
-        return base || __AV_FLEET_ORDEN.slice();
-      }
-      function __avInsertarDia(db, ctx, lista, extraCampos) {
-        var FV = firebase.firestore.FieldValue;
-        var vids = lista.map(function (x) { return x.vid; });
-        var noche = ctx.docs.NOCHE;
-        var k;
-        if (noche) {
-          var upd = { vehiculosOrden: FV.arrayUnion.apply(null, vids) };
-          lista.forEach(function (x) { upd['gruposCustom.' + x.vid] = x.grupo; });
-          if (extraCampos) for (k in extraCampos) upd[k] = extraCampos[k];
-          return __lkServicioDocRef(db, noche.id).update(upd);
-        }
-        if (!ctx.fechaStr) return Promise.reject(new Error('sin fecha'));
-        var gc = {}; lista.forEach(function (x) { gc[x.vid] = x.grupo; });
-        var payload = { turno: 'NOCHE', fechaStr: ctx.fechaStr, timestamp: Date.now(),
-                        vehiculosOrden: FV.arrayUnion.apply(null, __avSemillaOrden(ctx).concat(vids)),
-                        gruposCustom: gc };
-        if (extraCampos) for (k in extraCampos) if (k !== 'ultimaActServicio') payload[k] = extraCampos[k];
-        return __lkServicioDocRef(db, 'NOCHE_' + ctx.fechaStr.replace(/\//g, '-')).set(payload, { merge: true });
-      }
       function __avAdd(vid, grupo) {
         vid = String(vid || '').trim().toUpperCase();
         if (!vid) return;
@@ -4024,29 +3962,32 @@
         if (!vid || !nuevo || vid === nuevo) return;
         if (!__avValidVid(nuevo)) { __lkShowAlert('Número no válido. Usa solo letras y números (sin espacios ni puntos).'); return; }
         if (__avVidPresente(nuevo)) { __lkShowAlert('El vehículo ' + nuevo + ' ya existe.'); return; }
-        __avRunWrite('Guardando…', function (db) {
-          var srv = __lkReadServicios();
-          if (!srv || !srv.length) throw new Error('datos no cargados');
-          var d = __avDocsHoy();
-          var FV = firebase.firestore.FieldValue;
-          var ps = [];
-          ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
-            var doc = d[t]; if (!doc) return;
-            var inOrden = doc.vehiculosOrden && doc.vehiculosOrden.indexOf(vid) >= 0;
-            var reg = doc.registros && doc.registros[vid];
-            var grp = doc.gruposCustom && doc.gruposCustom[vid];
-            if (!inOrden && !reg && !grp) return;
-            var upd = {};
-            // vehiculosOrden reescrito entero (el orden de esta lista NO afecta al
-            // orden mostrado, que sale de gruposCustom); ventana de carrera mínima y
-            // sólo en renombrar, acción rara. Igual que hace el propio bundle.
-            if (inOrden) upd.vehiculosOrden = doc.vehiculosOrden.map(function (x) { return x === vid ? nuevo : x; });
-            if (reg) { upd['registros.' + nuevo] = reg; upd['registros.' + vid] = FV.delete(); }
-            if (grp) { upd['gruposCustom.' + nuevo] = grp; upd['gruposCustom.' + vid] = FV.delete(); }
-            ps.push(__lkServicioDocRef(db, doc.id).update(upd));
-          });
-          return Promise.all(ps);
-        }, 'No se pudo editar el vehículo.');
+        __avRunWrite('Guardando…', function (db) { return __avRenameDia(db, vid, nuevo); }, 'No se pudo editar el vehículo.');
+      }
+      // Motor de renombrado en los docs del día visto (conserva los datos). Separado
+      // para que v2.1 lo combine con el cambio en la config permanente (1 escritura).
+      function __avRenameDia(db, vid, nuevo) {
+        var srv = __lkReadServicios();
+        if (!srv || !srv.length) throw new Error('datos no cargados');
+        var d = __avDocsHoy();
+        var FV = firebase.firestore.FieldValue;
+        var ps = [];
+        ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
+          var doc = d[t]; if (!doc) return;
+          var inOrden = doc.vehiculosOrden && doc.vehiculosOrden.indexOf(vid) >= 0;
+          var reg = doc.registros && doc.registros[vid];
+          var grp = doc.gruposCustom && doc.gruposCustom[vid];
+          if (!inOrden && !reg && !grp) return;
+          var upd = {};
+          // vehiculosOrden reescrito entero (el orden de esta lista NO afecta al
+          // orden mostrado, que sale de gruposCustom); ventana de carrera mínima y
+          // sólo en renombrar, acción rara. Igual que hace el propio bundle.
+          if (inOrden) upd.vehiculosOrden = doc.vehiculosOrden.map(function (x) { return x === vid ? nuevo : x; });
+          if (reg) { upd['registros.' + nuevo] = reg; upd['registros.' + vid] = FV.delete(); }
+          if (grp) { upd['gruposCustom.' + nuevo] = grp; upd['gruposCustom.' + vid] = FV.delete(); }
+          ps.push(__lkServicioDocRef(db, doc.id).update(upd));
+        });
+        return Promise.all(ps);
       }
 
       // ── Modales ──────────────────────────────────────────────────────────────
@@ -4074,10 +4015,14 @@
         inp.onkeydown = function (ev) { if (ev.key === 'Enter') ok(); else if (ev.key === 'Escape') close(); };
       }
       function __avShowAddPrompt(grupo) {
-        __avPrompt('AÑADIR VEHÍCULO', 'Se añadirá a ' + (grupo === 'LATERALES' ? 'CARGAS LATERALES' : 'TRASERAS') + ' solo para hoy.', '', function (v) { __avAdd(v, grupo); });
+        var nom = grupo === 'LATERALES' ? 'CARGAS LATERALES' : 'TRASERAS';
+        __avPromptModo('AÑADIR VEHÍCULO', 'A ' + nom + '. Si el número estaba quitado, vuelve a aparecer.',
+          function (v, modo) { __avAddV2(v, grupo, modo); });
       }
       function __avShowRenamePrompt(vid) {
-        __avPrompt('EDITAR Nº', 'Cambia el número del vehículo añadido.', vid, function (v) { __avRename(vid, v); });
+        __avPrompt('EDITAR Nº', 'Cambia el número del vehículo añadido.', vid, function (v) {
+          __avRenameV2(vid, v);
+        });
       }
       function __avShowDeleteConfirm(vid) {
         var ex = document.getElementById('__av_del_modal__'); if (ex) ex.parentNode.removeChild(ex);
@@ -4197,7 +4142,7 @@
       function __avMakeAddBtn(grupo) {
         var b = document.createElement('button');
         b.setAttribute('data-av-add', grupo); b.type = 'button'; b.textContent = '+';
-        b.title = 'Añadir vehículo a ' + (grupo === 'LATERALES' ? 'CARGAS LATERALES' : 'TRASERAS') + ' (solo hoy)';
+        b.title = 'Añadir (solo hoy o permanente) o recuperar un vehículo quitado';
         // Flujo normal + writing-mode horizontal: la celda es vertical-lr, así el "+"
         // fluye DEBAJO del texto rotado (posicionar absoluto en un <td> rowspan es
         // poco fiable en Chromium). El glyph queda derecho.
@@ -4205,20 +4150,743 @@
         b.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __avShowAddPrompt(grupo); };
         return b;
       }
-      function __avMakeRowCtrls(vid) {
+      // conEditar === false → solo ×  (v2.1: los camiones FIJOS no se renombran).
+      function __avMakeRowCtrls(vid, conEditar) {
         var wrap = document.createElement('span');
         wrap.setAttribute('data-av-row', vid);
         wrap.style.cssText = 'display:inline-flex;gap:3px;margin-left:5px;vertical-align:middle;';
-        var edit = document.createElement('button'); edit.type = 'button'; edit.textContent = '✎'; edit.title = 'Editar nº';
-        edit.style.cssText = 'width:18px;height:18px;padding:0;line-height:16px;font-size:11px;border-radius:4px;border:1px solid #f59e0b;background:#fef3c7;color:#b45309;cursor:pointer;';
-        edit.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __avShowRenamePrompt(vid); };
-        var del = document.createElement('button'); del.type = 'button'; del.textContent = '×'; del.title = 'Quitar vehículo (hoy)';
+        if (conEditar !== false) {
+          var edit = document.createElement('button'); edit.type = 'button'; edit.textContent = '✎'; edit.title = 'Editar nº';
+          edit.style.cssText = 'width:18px;height:18px;padding:0;line-height:16px;font-size:11px;border-radius:4px;border:1px solid #f59e0b;background:#fef3c7;color:#b45309;cursor:pointer;';
+          edit.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __avShowRenamePrompt(vid); };
+          wrap.appendChild(edit);
+        }
+        var del = document.createElement('button'); del.type = 'button'; del.textContent = '×';
+        del.title = 'Quitar vehículo (pide contraseña)';
         del.style.cssText = 'width:18px;height:18px;padding:0;line-height:14px;font-size:15px;font-weight:900;border-radius:4px;border:1px solid #ef4444;background:#fee2e2;color:#dc2626;cursor:pointer;';
-        del.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __avShowDeleteConfirm(vid); };
-        wrap.appendChild(edit); wrap.appendChild(del);
+        del.onclick = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          __avShowQuitarModal(vid);
+        };
+        wrap.appendChild(del);
         return wrap;
       }
+      // ═══════════════════════════════════════════════════════════════════════
+      // v2.1 — AÑADIR / QUITAR vehículos SOLO HOY o PERMANENTE
+      // (desde 14-oct-2026 en TODAS las ramas: rama G y PWAs igual que la mía)
+      //
+      // Modelo de datos:
+      //  · PERMANENTE → doc compartido .../public/data/avisor_config/flota:
+      //      extra:   { <vid>: { grupo:'LATERALES'|'TRASERAS', desde:'YYYY-MM-DD' } }
+      //      ocultos: { <vid>: { desde:'YYYY-MM-DD' } }   (camiones FIJOS quitados)
+      //  · SOLO UN DÍA → campos en el doc de NOCHE de ese día:
+      //      avOcultosDia: { <vid>: true }  quitado ese día (fijo o permanente)
+      //      avMostrarDia: { <vid>: true }  fijo quitado-permanente que ese día SÍ sale
+      //    Los añadidos solo-hoy siguen siendo vehiculosOrden+gruposCustom (v1.7).
+      //
+      // Por qué así (deofuscado del bundle): el render hace
+      //   _e = new Set([...Na, ...NOCHE.vehiculosOrden, ...URB..., ...TARDE...])
+      // uniendo SIEMPRE la flota fija Na (R0∪C0) sin filtro → un FIJO no se puede
+      // quitar por datos: se OCULTA su fila (solo en apps con este código). Los
+      // PERMANENTES sí son datos: se escriben en el doc de NOCHE de cada día
+      // (auto-inserción al abrir HOY) → los ve todo el mundo, con cualquier versión.
+      //
+      // Auto-inserción y ÚLTIMA ACT.: esa escritura NO es una edición humana, así
+      // que (1) lleva avAutoIns = serverTimestamp() y el badge + el vigilante
+      // ignoran un updateTime que coincida con él (±1,5 s; medido en vivo: 12 ms),
+      // y (2) antes de escribir se copia la última edición REAL a
+      // ultimaActServicio. Así abrir la app no falsea la hora ni lanza un push de
+      // "NOCHE se está editando".
+      //
+      // Ocultar una fila: visibility:collapse (0 px). Si es la 1ª de su grupo
+      // (lleva la etiqueta vertical rowspan) se "vacían" sus celdas de datos y la
+      // etiqueta sigue viva para el resto (collapse/display:none la matarían —
+      // probado en vivo). Solo ATRIBUTOS (data-av-oculto) → el observer (childList)
+      // no se dispara; barrido incondicional por pasada → reversible aunque React
+      // recicle las filas.
+      // ═══════════════════════════════════════════════════════════════════════
+      var __AV_QUITAR_PW = '56125612';
+      var __AV_AUTO_TOL = 1500;             // ms (serverTimestamp vs updateTime)
+      var __AV_CFG_LS = 'avisor_flota_cfg'; // caché local de la config (arranque sin parpadeo)
+      var __avCfg = null;
+      var __avCfgVivo = false;              // true cuando Firestore ya entregó la config real
+      var __avCfgArrancado = false;
+      var __avCfgReintentoEn = 0;
+      var __avAutoInsEnVuelo = {};          // 'iso|vid' -> ms
+      var __avCtxMemo = null, __avCtxMemoT = 0;
+
+      // 'DD/MM/YYYY' | 'DD-MM-YYYY' | 'YYYY-MM-DD' → 'YYYY-MM-DD' (comparable como texto)
+      function __avIso(s) {
+        if (!s) return null;
+        var p = String(s).split(/[\/\-]/);
+        if (p.length !== 3) return null;
+        function pad(x) { x = String(parseInt(x, 10)); return x.length < 2 ? '0' + x : x; }
+        if (p[0].length === 4) return p[0] + '-' + pad(p[1]) + '-' + pad(p[2]);
+        return p[2] + '-' + pad(p[1]) + '-' + pad(p[0]);
+      }
+      function __avHoyIso() {
+        var d = new Date();
+        function pad(x) { return (x < 10 ? '0' : '') + x; }
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+      }
+      function __avFmtIso(iso) {
+        var p = String(iso || '').split('-');
+        return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : '';
+      }
+      function __avMk(vid, val) { var o = {}; o[vid] = val; return o; }
+
+      // ── Config permanente (doc compartido) ──────────────────────────────────
+      function __avCfgNorm(d) {
+        var out = { extra: {}, ocultos: {} };
+        try {
+          var ex = (d && d.extra) || {};
+          Object.keys(ex).forEach(function (v) {
+            var e = ex[v];
+            if (!__avValidVid(v) || !e || typeof e !== 'object') return;
+            out.extra[v] = { grupo: (e.grupo === 'TRASERAS' ? 'TRASERAS' : 'LATERALES'),
+                             desde: (typeof e.desde === 'string' ? e.desde : '0000-00-00') };
+          });
+          var oc = (d && d.ocultos) || {};
+          Object.keys(oc).forEach(function (v) {
+            var o = oc[v];
+            if (!__avValidVid(v) || !o || typeof o !== 'object') return;
+            out.ocultos[v] = { desde: (typeof o.desde === 'string' ? o.desde : '0000-00-00') };
+          });
+        } catch (e) {}
+        return out;
+      }
+      function __avCfgGet() {
+        if (!__avCfg) {
+          var c = null;
+          try { c = JSON.parse(localStorage.getItem(__AV_CFG_LS) || 'null'); } catch (e) {}
+          __avCfg = __avCfgNorm(c);
+        }
+        return __avCfg;
+      }
+      function __avCfgRef(db) {
+        return db.collection('artifacts').doc(__UA_APPID)
+                 .collection('public').doc('data')
+                 .collection('avisor_config').doc('flota');
+      }
+      function __avCfgSet(db, obj) { return __avCfgRef(db).set(obj, { merge: true }); }
+      // Listener en vivo (1 doc): lo que se haga en el móvil se ve al momento en el PC.
+      function __avCfgArrancar() {
+        if (__avCfgArrancado || Date.now() < __avCfgReintentoEn) return;
+        __avCfgArrancado = true;
+        function fallo() { __avCfgArrancado = false; __avCfgReintentoEn = Date.now() + 30000; }
+        __uaEnsureFirebase().then(function () {
+          var db = __uaInitFirebase();
+          if (!db) { fallo(); return; }
+          __avCfgRef(db).onSnapshot(function (snap) {
+            try {
+              __avCfg = __avCfgNorm(snap.exists ? snap.data() : null);
+              __avCfgVivo = true;
+              __avCtxMemo = null;
+              try { localStorage.setItem(__AV_CFG_LS, JSON.stringify(__avCfg)); } catch (e2) {}
+            } catch (e) {}
+          }, fallo);
+        }).catch(fallo);
+      }
+
+      // ── Contexto del día que se está viendo (memo corto: 1 lectura por pasada) ──
+      function __avDiaCtx(fresco) {
+        var now = Date.now();
+        if (!fresco && __avCtxMemo && now - __avCtxMemoT < 120) return __avCtxMemo;
+        var ctx = { fechaStr: null, iso: null, esHoy: false, cargado: false,
+                    docs: { NOCHE: null, URBANIZACIONES: null, TARDE: null },
+                    enOrden: {}, grupoDatos: {}, ocultosDia: {}, mostrarDia: {} };
+        try {
+          ctx.fechaStr = __lkFechaStrActual();
+          ctx.iso = __avIso(ctx.fechaStr);
+          ctx.esHoy = !!ctx.iso && ctx.iso === __avHoyIso();
+          var srv = __lkReadServicios();
+          ctx.cargado = !!(srv && srv.length);
+          var clave = __lkFechaKey(ctx.fechaStr);
+          if (srv && clave) {
+            for (var i = 0; i < srv.length; i++) {
+              var s = srv[i];
+              if (s && ctx.docs.hasOwnProperty(s.turno) && __lkFechaKey(s.fechaStr) === clave && !ctx.docs[s.turno]) ctx.docs[s.turno] = s;
+            }
+          }
+          ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
+            var d = ctx.docs[t]; if (!d) return;
+            // Presente en la tabla = está en vehiculosOrden (es lo que pinta el bundle)
+            (d.vehiculosOrden || []).forEach(function (v) { v = String(v); if (v) ctx.enOrden[v] = 1; });
+            if (d.gruposCustom) Object.keys(d.gruposCustom).forEach(function (v) { if (!ctx.grupoDatos[v]) ctx.grupoDatos[v] = d.gruposCustom[v]; });
+            if (d.avOcultosDia) Object.keys(d.avOcultosDia).forEach(function (v) { if (d.avOcultosDia[v]) ctx.ocultosDia[v] = 1; });
+            if (d.avMostrarDia) Object.keys(d.avMostrarDia).forEach(function (v) { if (d.avMostrarDia[v]) ctx.mostrarDia[v] = 1; });
+          });
+        } catch (e) {}
+        __avCtxMemo = ctx; __avCtxMemoT = now;
+        return ctx;
+      }
+
+      // Estado de un vehículo en el día visto.
+      function __avEstadoVid(vid, ctx) {
+        var cfg = __avCfgGet();
+        var st = { vid: vid, fija: !!__AV_FLEET[vid], extra: cfg.extra[vid] || null,
+                   enOrden: !!ctx.enOrden[vid], ocultoHoy: !!ctx.ocultosDia[vid],
+                   mostrarHoy: !!ctx.mostrarDia[vid], ocultoPerm: null };
+        var op = cfg.ocultos[vid];
+        st.ocultoPerm = (op && ctx.iso && ctx.iso >= op.desde) ? op : null;
+        st.oculto = st.ocultoHoy || (!!st.ocultoPerm && !st.mostrarHoy);
+        st.adhoc = st.enOrden && !st.fija && !st.extra;   // añadido solo para este día
+        return st;
+      }
+      function __avTipoTexto(st) {
+        if (st.fija) return 'Camión fijo de la flota.';
+        if (st.extra) return 'Camión permanente (desde el ' + __avFmtIso(st.extra.desde) + ').';
+        return 'Añadido solo para este día.';
+      }
+      // Camiones quitados en el día visto (para la lista de recuperar).
+      function __avListaOcultos(ctx) {
+        var cfg = __avCfgGet(), cand = {};
+        Object.keys(__AV_FLEET).forEach(function (v) { cand[v] = 1; });
+        Object.keys(ctx.enOrden).forEach(function (v) { cand[v] = 1; });
+        Object.keys(cfg.ocultos).forEach(function (v) { cand[v] = 1; });
+        Object.keys(ctx.ocultosDia).forEach(function (v) { cand[v] = 1; });
+        var out = [];
+        Object.keys(cand).forEach(function (v) { var st = __avEstadoVid(v, ctx); if (st.oculto) out.push(st); });
+        out.sort(function (a, b) { return a.vid < b.vid ? -1 : (a.vid > b.vid ? 1 : 0); });
+        return out;
+      }
+
+      // ── Escrituras ───────────────────────────────────────────────────────────
+      // vehiculosOrden para CREAR el doc de NOCHE, como el bundle: el de URB/TARDE
+      // del mismo día, o la flota Na.
+      function __avSemillaOrden(ctx) {
+        var base = null;
+        ['URBANIZACIONES', 'TARDE'].forEach(function (t) {
+          var d = ctx.docs[t];
+          if (!base && d && Array.isArray(d.vehiculosOrden) && d.vehiculosOrden.length) base = d.vehiculosOrden.slice();
+        });
+        return base || __AV_FLEET_ORDEN.slice();
+      }
+      // Inserta vehículos en el doc de NOCHE del día (lo crea sembrado si no existe).
+      // extraCampos: se añaden a la escritura (p.ej. avAutoIns). Devuelve Promise.
+      function __avInsertarDia(db, ctx, lista, extraCampos) {
+        var FV = firebase.firestore.FieldValue;
+        var vids = lista.map(function (x) { return x.vid; });
+        var noche = ctx.docs.NOCHE;
+        var k;
+        if (noche) {
+          var upd = { vehiculosOrden: FV.arrayUnion.apply(null, vids) };
+          lista.forEach(function (x) { upd['gruposCustom.' + x.vid] = x.grupo; });
+          if (extraCampos) for (k in extraCampos) upd[k] = extraCampos[k];
+          return __lkServicioDocRef(db, noche.id).update(upd);
+        }
+        if (!ctx.fechaStr) return Promise.reject(new Error('sin fecha'));
+        var gc = {}; lista.forEach(function (x) { gc[x.vid] = x.grupo; });
+        var payload = { turno: 'NOCHE', fechaStr: ctx.fechaStr, timestamp: Date.now(),
+                        vehiculosOrden: FV.arrayUnion.apply(null, __avSemillaOrden(ctx).concat(vids)),
+                        gruposCustom: gc };
+        if (extraCampos) for (k in extraCampos) if (k !== 'ultimaActServicio') payload[k] = extraCampos[k];
+        return __lkServicioDocRef(db, 'NOCHE_' + ctx.fechaStr.replace(/\//g, '-')).set(payload, { merge: true });
+      }
+      // Marcas del día: poner = {avOcultosDia:{vid:true}} …; quitar = [['avOcultosDia', vid], …]
+      function __avMarcasDia(db, ctx, poner, quitar) {
+        var FV = firebase.firestore.FieldValue;
+        var ps = [];
+        (quitar || []).forEach(function (q) {
+          ['NOCHE', 'URBANIZACIONES', 'TARDE'].forEach(function (t) {
+            var d = ctx.docs[t];
+            if (!d || !d[q[0]] || !d[q[0]][q[1]]) return;
+            ps.push(__lkServicioDocRef(db, d.id).update(__avMk(q[0] + '.' + q[1], FV.delete())));
+          });
+        });
+        if (poner && Object.keys(poner).length) {
+          var noche = ctx.docs.NOCHE;
+          if (noche) {
+            var u = {};
+            Object.keys(poner).forEach(function (c) { Object.keys(poner[c]).forEach(function (v) { u[c + '.' + v] = true; }); });
+            ps.push(__lkServicioDocRef(db, noche.id).update(u));
+          } else if (ctx.fechaStr) {
+            var payload = { turno: 'NOCHE', fechaStr: ctx.fechaStr, timestamp: Date.now(),
+                            vehiculosOrden: FV.arrayUnion.apply(null, __avSemillaOrden(ctx)) };
+            Object.keys(poner).forEach(function (c) { payload[c] = poner[c]; });
+            ps.push(__lkServicioDocRef(db, 'NOCHE_' + ctx.fechaStr.replace(/\//g, '-')).set(payload, { merge: true }));
+          }
+        }
+        return Promise.all(ps);
+      }
+      // updateTime + avAutoIns del doc por REST (para no perder la última edición real).
+      function __avRestMeta(docId) {
+        return new Promise(function (resolve) {
+          var hecho = false;
+          function fin(v) { if (!hecho) { hecho = true; resolve(v); } }
+          setTimeout(function () { fin(null); }, 6000);
+          try {
+            var url = 'https://firestore.googleapis.com/v1/projects/' + __UA_CFG.projectId +
+              '/databases/(default)/documents/artifacts/' + __UA_APPID +
+              '/public/data/servicios_diarios/' + encodeURIComponent(docId) +
+              '?key=' + __UA_CFG.apiKey + '&mask.fieldPaths=turno&mask.fieldPaths=avAutoIns';
+            fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+              if (!j || !j.updateTime) { fin(null); return; }
+              var u = Date.parse(j.updateTime);
+              var a = j.fields && j.fields.avAutoIns && j.fields.avAutoIns.timestampValue;
+              fin({ updMs: isNaN(u) ? 0 : u, autoMs: a ? Date.parse(a) : 0 });
+            }).catch(function () { fin(null); });
+          } catch (e) { fin(null); }
+        });
+      }
+
+      // ── AUTO-INSERCIÓN de permanentes (solo HOY, datos cargados, config viva) ──
+      function __avAutoInsertar(ctx) {
+        try {
+          var cfg = __avCfgGet(), now = Date.now(), faltan = [];
+          Object.keys(cfg.extra).forEach(function (vid) {
+            var e = cfg.extra[vid];
+            if (__AV_FLEET[vid] || e.desde > ctx.iso || ctx.enOrden[vid]) return;
+            if (__avEstadoVid(vid, ctx).oculto) return;          // quitado este día
+            var k = ctx.iso + '|' + vid;
+            if (__avAutoInsEnVuelo[k] && now - __avAutoInsEnVuelo[k] < 60000) return;
+            faltan.push({ vid: vid, grupo: e.grupo });
+          });
+          if (!faltan.length) return;
+          faltan.forEach(function (f) { __avAutoInsEnVuelo[ctx.iso + '|' + f.vid] = now; });
+          var noche = ctx.docs.NOCHE;
+          Promise.all([__uaEnsureFirebase(), noche ? __avRestMeta(noche.id) : Promise.resolve(null)]).then(function (rs) {
+            var db = __uaInitFirebase();
+            if (!db) return;
+            var FV = firebase.firestore.FieldValue;
+            var extra = { avAutoIns: FV.serverTimestamp() };
+            if (noche) {
+              var meta = rs[1];
+              if (!meta) return;   // sin la hora previa NO escribimos (no perder ÚLTIMA ACT.); reintento en 60 s
+              var previaAuto = meta.autoMs && Math.abs(meta.updMs - meta.autoMs) < __AV_AUTO_TOL;
+              var sello = (typeof noche.ultimaActServicio === 'number') ? noche.ultimaActServicio : 0;
+              if (meta.updMs && !previaAuto && meta.updMs > sello) extra.ultimaActServicio = meta.updMs;
+            }
+            return __avInsertarDia(db, ctx, faltan, extra);
+          }).catch(function () {});
+        } catch (e) {}
+      }
+
+      // ── OCULTAR filas (todas las pantallas de servicios) + disparar auto-inserción ──
+      // Nº de vehículo de una fila: 1ª celda NO-etiqueta cuyo texto es un vid conocido
+      // (en ESTADO COMPLETO hay 3 celdas de nº por fila; vale la 1ª).
+      function __avFilaVid(tr, conocidos) {
+        var tds = tr.children;
+        for (var i = 0; i < tds.length; i++) {
+          if (tds[i].hasAttribute('rowspan')) continue;   // etiqueta de grupo
+          var n = __avCellNum(tds[i]);
+          if (n && conocidos[n]) return n;
+        }
+        return null;
+      }
+      // TODAS las ramas (rama G y PWAs incluidas, 14-oct-2026): todos ocultan los
+      // quitados y cualquiera que abra HOY auto-inserta los permanentes que falten
+      // → todos ven los mismos camiones aunque el móvil de Daniel esté cerrado.
+      function __avAplicarOcultos() {
+        try {
+          if (!__uaTurnoPantallaIndividual() && !__uaEsEstadoCompleto()) return;
+          __avCfgArrancar();
+          var ctx = __avDiaCtx();
+          if (!ctx.iso) return;
+          var conocidos = {};
+          Object.keys(__AV_FLEET).forEach(function (v) { conocidos[v] = 1; });
+          Object.keys(ctx.enOrden).forEach(function (v) { conocidos[v] = 1; });
+
+          var trs = document.querySelectorAll('table tbody tr');
+          var filas = [], gi = -1, restantes = 0, i, c;
+          for (i = 0; i < trs.length; i++) {
+            var tr = trs[i], lab = null;
+            for (c = 0; c < tr.children.length; c++) { if (tr.children[c].hasAttribute('rowspan')) { lab = tr.children[c]; break; } }
+            var primera = false;
+            if (lab) { gi++; restantes = Math.max(1, parseInt(lab.getAttribute('rowspan'), 10) || 1); primera = true; }
+            var vid = __avFilaVid(tr, conocidos);
+            filas.push({ tr: tr, oculto: !!vid && __avEstadoVid(vid, ctx).oculto, grupo: (restantes > 0 ? gi : -1), primera: primera });
+            if (restantes > 0) restantes--;
+          }
+          var todoOculto = {};
+          filas.forEach(function (f) {
+            if (f.grupo < 0) return;
+            if (!(f.grupo in todoOculto)) todoOculto[f.grupo] = true;
+            if (!f.oculto) todoOculto[f.grupo] = false;
+          });
+          filas.forEach(function (f) {
+            var want = '';
+            if (f.oculto) want = (f.primera && f.grupo >= 0 && !todoOculto[f.grupo]) ? 'vaciar' : 'collapse';
+            if ((f.tr.getAttribute('data-av-oculto') || '') !== want) {
+              if (want) f.tr.setAttribute('data-av-oculto', want); else f.tr.removeAttribute('data-av-oculto');
+            }
+          });
+
+          if (ctx.esHoy && ctx.cargado && __avCfgVivo) __avAutoInsertar(ctx);
+        } catch (e) {}
+      }
+
+      // ── Acciones del usuario ─────────────────────────────────────────────────
+      // Recuperar un camión quitado. modo 'HOY' | 'PERM' (solo importa si estaba
+      // quitado-permanente: HOY = sale solo ese día; PERM = vuelve para siempre).
+      function __avRecuperar(vid, modo, ctx, st) {
+        var poner = null, quitar = [['avOcultosDia', vid]], borrarOculto = false;
+        if (st.ocultoPerm) {
+          if (modo === 'PERM') { borrarOculto = true; quitar.push(['avMostrarDia', vid]); }
+          else poner = { avMostrarDia: __avMk(vid, true) };
+        }
+        __avRunWrite('Recuperando…', function (db) {
+          var FV = firebase.firestore.FieldValue;
+          var ps = [__avMarcasDia(db, ctx, poner, quitar)];
+          if (borrarOculto) ps.push(__avCfgSet(db, { ocultos: __avMk(vid, FV.delete()) }));
+          return Promise.all(ps);
+        }, 'No se pudo recuperar el vehículo.');
+      }
+      function __avAddV2(vid, grupo, modo) {
+        vid = String(vid || '').trim().toUpperCase();
+        if (!vid) return;
+        if (!__avValidVid(vid)) { __lkShowAlert('Número no válido. Usa solo letras y números (sin espacios ni puntos).'); return; }
+        var ctx = __avDiaCtx(true);
+        if (!ctx.fechaStr || !ctx.iso) { __lkShowAlert('No se pudo leer la fecha de la tabla. Inténtalo de nuevo.'); return; }
+        if (!ctx.cargado) { __lkShowAlert('Los datos aún se están cargando. Espera un momento.'); return; }
+        var st = __avEstadoVid(vid, ctx);
+
+        if (st.oculto) { __avRecuperar(vid, modo, ctx, st); return; }         // estaba quitado → vuelve
+        if (st.fija) { __lkShowAlert('El vehículo ' + vid + ' ya está en la lista.'); return; }
+        if (st.extra) {
+          if (st.enOrden) { __lkShowAlert('El vehículo ' + vid + ' ya está en la lista (es permanente).'); return; }
+          __avRunWrite('Añadiendo…', function (db) {       // permanente aún no insertado este día
+            return __avInsertarDia(db, ctx, [{ vid: vid, grupo: st.extra.grupo }]);
+          }, 'No se pudo añadir el vehículo.');
+          return;
+        }
+        if (st.enOrden) {                                  // añadido solo-hoy ya presente
+          if (modo !== 'PERM') { __lkShowAlert('El vehículo ' + vid + ' ya está en la lista.'); return; }
+          var g = ctx.grupoDatos[vid] === 'TRASERAS' ? 'TRASERAS' : (ctx.grupoDatos[vid] === 'LATERALES' ? 'LATERALES' : grupo);
+          __avRunWrite('Guardando…', function (db) {       // → convertirlo en permanente
+            return __avCfgSet(db, { extra: __avMk(vid, { grupo: g, desde: ctx.iso }) });
+          }, 'No se pudo hacer permanente el vehículo.');
+          return;
+        }
+        __avRunWrite('Añadiendo…', function (db) {         // no estaba: añadir
+          var ps = [__avInsertarDia(db, ctx, [{ vid: vid, grupo: grupo }])];
+          if (modo === 'PERM') ps.push(__avCfgSet(db, { extra: __avMk(vid, { grupo: grupo, desde: ctx.iso }) }));
+          return Promise.all(ps);
+        }, 'No se pudo añadir el vehículo.');
+      }
+      // Quitar (la contraseña ya se validó en el modal). modo 'HOY' | 'PERM'.
+      //  · añadido solo-hoy → se borra de ese día (como v1.7).
+      //  · permanente/fijo SOLO HOY → se oculta ese día (sus datos NO se borran).
+      //  · permanente PERMANENTE → sale de la config (+ oculto ese día si ya estaba).
+      //  · fijo PERMANENTE → config.ocultos desde ese día (días anteriores intactos).
+      function __avQuitarV2(vid, modo) {
+        var ctx = __avDiaCtx(true);
+        if (!ctx.fechaStr || !ctx.iso) { __lkShowAlert('No se pudo leer la fecha de la tabla. Inténtalo de nuevo.'); return; }
+        if (!ctx.cargado) { __lkShowAlert('Los datos aún se están cargando. Espera un momento.'); return; }
+        var st = __avEstadoVid(vid, ctx);
+        if (st.adhoc) { __avDelete(vid); return; }
+        __avRunWrite('Quitando…', function (db) {
+          var FV = firebase.firestore.FieldValue;
+          var ps = [], ocultarHoy = { avOcultosDia: __avMk(vid, true) };
+          if (st.extra) {
+            if (modo === 'PERM') {
+              ps.push(__avCfgSet(db, { extra: __avMk(vid, FV.delete()) }));
+              if (st.enOrden) ps.push(__avMarcasDia(db, ctx, ocultarHoy, null));
+            } else ps.push(__avMarcasDia(db, ctx, ocultarHoy, null));
+          } else if (st.fija) {
+            if (modo === 'PERM') {
+              var prev = __avCfgGet().ocultos[vid];
+              var desde = (prev && prev.desde < ctx.iso) ? prev.desde : ctx.iso;   // nunca acortar un oculto previo
+              ps.push(__avCfgSet(db, { ocultos: __avMk(vid, { desde: desde }) }));
+              ps.push(__avMarcasDia(db, ctx, null, [['avMostrarDia', vid]]));
+            } else ps.push(__avMarcasDia(db, ctx, ocultarHoy, [['avMostrarDia', vid]]));
+          }
+          return Promise.all(ps);
+        }, 'No se pudo quitar el vehículo.');
+      }
+      // Renombrar (añadidos solo-hoy y permanentes; los fijos no llevan ✎).
+      function __avRenameV2(vid, nuevo) {
+        vid = String(vid || '').trim().toUpperCase();
+        nuevo = String(nuevo || '').trim().toUpperCase();
+        if (!vid || !nuevo || vid === nuevo) return;
+        if (!__avValidVid(nuevo)) { __lkShowAlert('Número no válido. Usa solo letras y números (sin espacios ni puntos).'); return; }
+        var ctx = __avDiaCtx(true);
+        if (!ctx.cargado) { __lkShowAlert('Los datos aún se están cargando. Espera un momento.'); return; }
+        var st = __avEstadoVid(vid, ctx), st2 = __avEstadoVid(nuevo, ctx);
+        if (st.fija) return;
+        if (st2.fija || st2.extra || st2.enOrden || st2.oculto) { __lkShowAlert('El vehículo ' + nuevo + ' ya existe.'); return; }
+        __avRunWrite('Guardando…', function (db) {
+          var FV = firebase.firestore.FieldValue;
+          var ps = [__avRenameDia(db, vid, nuevo)];
+          if (st.extra) {
+            var ex = {};
+            ex[vid] = FV.delete();
+            ex[nuevo] = { grupo: st.extra.grupo, desde: st.extra.desde };
+            ps.push(__avCfgSet(db, { extra: ex }));
+          }
+          return Promise.all(ps);
+        }, 'No se pudo editar el vehículo.');
+      }
+
+      // ── Modales v2.1 ─────────────────────────────────────────────────────────
+      var __AV_OVERLAY_CSS = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+      var __AV_CARD_CSS = 'background:#fff;border-radius:16px;padding:24px;max-width:360px;width:90%;box-shadow:0 25px 50px rgba(0,0,0,0.3);box-sizing:border-box;';
+      function __avBtn(texto, bg, borde, color) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.textContent = texto;
+        b.style.cssText = 'flex:1;background:' + bg + ';border:2px solid ' + borde + ';color:' + color +
+          ';border-radius:10px;padding:11px 6px;font-weight:bold;cursor:pointer;font-size:13px;line-height:1.2;';
+        return b;
+      }
+      // "+": nº + [SOLO HOY] [PERMANENTE]. Enter = SOLO HOY (lo menos invasivo).
+      function __avPromptModo(titulo, sub, onOk) {
+        var ex = document.getElementById('__av_modal__'); if (ex) ex.parentNode.removeChild(ex);
+        var m = document.createElement('div'); m.id = '__av_modal__'; m.style.cssText = __AV_OVERLAY_CSS;
+        var card = document.createElement('div'); card.style.cssText = __AV_CARD_CSS;
+        var h = document.createElement('h3'); h.textContent = titulo;
+        h.style.cssText = 'font-size:16px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 6px;color:#1f2937';
+        var p = document.createElement('p'); p.textContent = sub;
+        p.style.cssText = 'font-size:12px;color:#6b7280;text-align:center;margin:0 0 14px';
+        var inp = document.createElement('input');
+        inp.type = 'text'; inp.setAttribute('inputmode', 'numeric'); inp.autocomplete = 'off'; inp.placeholder = 'Nº vehículo';
+        inp.style.cssText = 'width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;font-size:20px;text-align:center;letter-spacing:0.15em;box-sizing:border-box;outline:none';
+        var fila = document.createElement('div'); fila.style.cssText = 'display:flex;gap:10px;margin-top:14px';
+        var bHoy = __avBtn('SOLO HOY', '#dbeafe', '#3b82f6', '#1d4ed8');
+        var bPerm = __avBtn('PERMANENTE', '#dcfce7', '#16a34a', '#15803d');
+        fila.appendChild(bHoy); fila.appendChild(bPerm);
+        var bCan = document.createElement('button'); bCan.type = 'button'; bCan.textContent = 'CANCELAR';
+        bCan.style.cssText = 'width:100%;margin-top:10px;background:#f3f4f6;border:none;border-radius:8px;padding:11px;font-weight:bold;cursor:pointer;font-size:13px;color:#4b5563';
+        card.appendChild(h); card.appendChild(p); card.appendChild(inp); card.appendChild(fila); card.appendChild(bCan);
+        m.appendChild(card);
+        document.body.appendChild(m);
+        setTimeout(function () { try { inp.focus(); } catch (e) {} }, 60);
+        function close() { try { document.body.removeChild(m); } catch (e) {} }
+        function ok(modo) { var v = (inp.value || '').trim(); if (!v) { inp.focus(); return; } close(); onOk(v, modo); }
+        bHoy.onclick = function () { ok('HOY'); };
+        bPerm.onclick = function () { ok('PERM'); };
+        bCan.onclick = close;
+        inp.onkeydown = function (ev) { if (ev.key === 'Enter') ok('HOY'); else if (ev.key === 'Escape') close(); };
+      }
+      // "×": tipo del camión + contraseña 56125612 + [SOLO HOY] [PERMANENTE]
+      // (un añadido solo-hoy solo tiene [QUITAR]). Enter = SOLO HOY.
+      function __avShowQuitarModal(vid) {
+        var ctx = __avDiaCtx(true);
+        var st = __avEstadoVid(vid, ctx);
+        var ex = document.getElementById('__av_quit_modal__'); if (ex) ex.parentNode.removeChild(ex);
+        var m = document.createElement('div'); m.id = '__av_quit_modal__'; m.style.cssText = __AV_OVERLAY_CSS;
+        var card = document.createElement('div'); card.style.cssText = __AV_CARD_CSS + 'text-align:center;';
+        var h = document.createElement('h3'); h.textContent = 'QUITAR ' + vid;
+        h.style.cssText = 'font-size:17px;font-weight:bold;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 8px;color:#b91c1c';
+        var p1 = document.createElement('p'); p1.textContent = __avTipoTexto(st);
+        p1.style.cssText = 'font-size:13px;color:#1f2937;font-weight:bold;margin:0 0 6px';
+        var p2 = document.createElement('p');
+        p2.textContent = st.adhoc ? 'Se quita de este día.'
+          : 'SOLO HOY: desaparece este día.  PERMANENTE: desaparece desde este día en adelante (los días anteriores se conservan).';
+        p2.style.cssText = 'font-size:11px;color:#6b7280;margin:0 0 14px;line-height:1.4';
+        var inp = document.createElement('input');
+        inp.type = 'password'; inp.autocomplete = 'off'; inp.setAttribute('inputmode', 'numeric'); inp.placeholder = 'Contraseña';
+        inp.style.cssText = 'width:100%;border:1px solid #d1d5db;border-radius:8px;padding:12px;font-size:18px;text-align:center;letter-spacing:0.3em;box-sizing:border-box;outline:none';
+        var err = document.createElement('p'); err.textContent = 'CONTRASEÑA INCORRECTA';
+        err.style.cssText = 'color:#ef4444;font-size:12px;font-weight:bold;visibility:hidden;margin:6px 0 0';
+        var fila = document.createElement('div'); fila.style.cssText = 'display:flex;gap:10px;margin-top:10px';
+        var bHoy, bPerm = null;
+        if (st.adhoc) {
+          bHoy = __avBtn('QUITAR', '#fee2e2', '#dc2626', '#b91c1c');
+          fila.appendChild(bHoy);
+        } else {
+          bHoy = __avBtn('QUITAR SOLO HOY', '#fef3c7', '#f59e0b', '#b45309');
+          bPerm = __avBtn('QUITAR PERMANENTE', '#fee2e2', '#dc2626', '#b91c1c');
+          fila.appendChild(bHoy); fila.appendChild(bPerm);
+        }
+        var bCan = document.createElement('button'); bCan.type = 'button'; bCan.textContent = 'CANCELAR';
+        bCan.style.cssText = 'width:100%;margin-top:10px;background:#f3f4f6;border:none;border-radius:8px;padding:11px;font-weight:bold;cursor:pointer;font-size:13px;color:#4b5563';
+        card.appendChild(h); card.appendChild(p1); card.appendChild(p2); card.appendChild(inp); card.appendChild(err);
+        card.appendChild(fila); card.appendChild(bCan);
+        m.appendChild(card);
+        document.body.appendChild(m);
+        setTimeout(function () { try { inp.focus(); } catch (e) {} }, 60);
+        function close() { try { document.body.removeChild(m); } catch (e) {} }
+        function intentar(modo) {
+          if ((inp.value || '').trim() === __AV_QUITAR_PW) { close(); __avQuitarV2(vid, modo); }
+          else { err.style.visibility = 'visible'; inp.value = ''; inp.focus(); }
+        }
+        bHoy.onclick = function () { intentar('HOY'); };
+        if (bPerm) bPerm.onclick = function () { intentar('PERM'); };
+        bCan.onclick = close;
+        inp.onkeydown = function (ev) { if (ev.key === 'Enter') intentar('HOY'); else if (ev.key === 'Escape') close(); };
+      }
+      // Lista de camiones QUITADOS del día visto, con botones para recuperarlos.
+      function __avShowOcultosModal() {
+        var ctx = __avDiaCtx(true);
+        var lista = __avListaOcultos(ctx);
+        var ex = document.getElementById('__av_ocu_modal__'); if (ex) ex.parentNode.removeChild(ex);
+        var m = document.createElement('div'); m.id = '__av_ocu_modal__'; m.style.cssText = __AV_OVERLAY_CSS;
+        var card = document.createElement('div'); card.style.cssText = __AV_CARD_CSS + 'max-height:80vh;display:flex;flex-direction:column;';
+        var h = document.createElement('h3'); h.textContent = 'CAMIONES QUITADOS';
+        h.style.cssText = 'font-size:16px;font-weight:bold;text-align:center;letter-spacing:0.06em;margin:0 0 4px;color:#1f2937';
+        var p = document.createElement('p'); p.textContent = 'Día ' + (ctx.fechaStr || '');
+        p.style.cssText = 'font-size:12px;color:#6b7280;text-align:center;margin:0 0 12px';
+        var cont = document.createElement('div'); cont.style.cssText = 'overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:40px;';
+        if (!lista.length) {
+          var vac = document.createElement('p'); vac.textContent = 'No hay camiones quitados este día.';
+          vac.style.cssText = 'font-size:12px;color:#9ca3af;text-align:center;margin:14px 0';
+          cont.appendChild(vac);
+        }
+        function cerrar() { try { document.body.removeChild(m); } catch (e) {} }
+        lista.forEach(function (st) {
+          var fila = document.createElement('div');
+          fila.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid #f1f5f9;';
+          var info = document.createElement('div'); info.style.cssText = 'flex:1;min-width:0;';
+          var v = document.createElement('div'); v.textContent = st.vid;
+          v.style.cssText = 'font-weight:900;font-size:15px;color:#111827';
+          var r = document.createElement('div');
+          r.textContent = (st.ocultoPerm && !st.ocultoHoy) ? ('Quitado permanente desde el ' + __avFmtIso(st.ocultoPerm.desde))
+                        : (st.ocultoPerm ? ('Quitado hoy y permanente desde el ' + __avFmtIso(st.ocultoPerm.desde)) : 'Quitado solo este día');
+          r.style.cssText = 'font-size:10px;color:#6b7280;margin-top:1px';
+          info.appendChild(v); info.appendChild(r);
+          fila.appendChild(info);
+          function mkB(txt, modo, bg, bd, col) {
+            var b = document.createElement('button'); b.type = 'button'; b.textContent = txt;
+            b.style.cssText = 'flex-shrink:0;padding:6px 8px;border-radius:7px;border:2px solid ' + bd + ';background:' + bg +
+              ';color:' + col + ';font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap;';
+            b.onclick = function (e) { e.preventDefault(); e.stopPropagation(); cerrar(); __avRecuperar(st.vid, modo, ctx, st); };
+            return b;
+          }
+          if (st.ocultoPerm) {
+            fila.appendChild(mkB('SOLO HOY', 'HOY', '#dbeafe', '#3b82f6', '#1d4ed8'));
+            fila.appendChild(mkB('SIEMPRE', 'PERM', '#dcfce7', '#16a34a', '#15803d'));
+          } else {
+            fila.appendChild(mkB('MOSTRAR', 'HOY', '#dcfce7', '#16a34a', '#15803d'));
+          }
+          cont.appendChild(fila);
+        });
+        var bCer = document.createElement('button'); bCer.type = 'button'; bCer.textContent = 'CERRAR';
+        bCer.style.cssText = 'width:100%;margin-top:12px;background:#f3f4f6;border:none;border-radius:8px;padding:11px;font-weight:bold;cursor:pointer;font-size:13px;color:#4b5563;flex-shrink:0;';
+        bCer.onclick = cerrar;
+        m.onclick = function (ev) { if (ev.target === m) cerrar(); };
+        card.appendChild(h); card.appendChild(p); card.appendChild(cont); card.appendChild(bCer);
+        m.appendChild(card);
+        document.body.appendChild(m);
+      }
+      // Botón "camiones quitados" bajo el lápiz (solo en modo edición). El número va
+      // en ::after (attr data-n) → NO ensucia el textContent de la celda de esquina
+      // (así se sigue detectando vacía) y actualizarlo es solo un ATRIBUTO.
+      var __AV_EYEOFF_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>';
+      function __avMakeOcultosBtn() {
+        var b = document.createElement('button');
+        b.type = 'button'; b.setAttribute('data-av-ocultos', '1'); b.setAttribute('data-n', '0');
+        b.title = 'Camiones quitados (ver / recuperar)';
+        b.innerHTML = __AV_EYEOFF_SVG;
+        b.style.cssText = 'position:relative;display:flex;margin:2px auto 6px;width:26px;height:22px;padding:0;border-radius:7px;border:1px solid #94a3b8;background:#f1f5f9;color:#475569;cursor:pointer;line-height:0;align-items:center;justify-content:center;';
+        b.onclick = function (e) { e.preventDefault(); e.stopPropagation(); __avShowOcultosModal(); };
+        return b;
+      }
+
+      // ── Controles en ESTADO COMPLETO (rama mía) ──────────────────────────────
+      // Igual que injectAddVehControls (v1.7) pero: × en TODAS las filas visibles
+      // (fijos solo ×; permanentes y solo-hoy ✎×), botón de quitados bajo el lápiz,
+      // y retirada de controles obsoletos (fila oculta o reciclada por React).
+      function __avInjectControlsV2() {
+        try {
+          if (!__uaEsEstadoCompleto()) return;
+          var ctx = __avDiaCtx();
+          var conocidos = {};
+          Object.keys(__AV_FLEET).forEach(function (v) { conocidos[v] = 1; });
+          Object.keys(ctx.enOrden).forEach(function (v) { conocidos[v] = 1; });
+
+          var cells = document.querySelectorAll('th,td');
+          var cornerTh = null, cornerX = Infinity, groupLeft = {}, i;
+          for (i = 0; i < cells.length; i++) {
+            var el = cells[i];
+            if (el.tagName === 'TH') {
+              if ((el.textContent || '').trim() === '') {
+                var xt = el.getBoundingClientRect().left;
+                if (xt < cornerX) { cornerX = xt; cornerTh = el; }
+              }
+              continue;
+            }
+            if (!el.hasAttribute('rowspan')) continue;   // solo etiquetas de grupo
+            var raw = (el.textContent || '').replace(/[+]/g, '').replace(/\s+/g, ' ').trim();
+            var grupo = raw.indexOf('LATERALES') >= 0 ? 'LATERALES' : (raw.indexOf('TRASERAS') >= 0 ? 'TRASERAS' : null);
+            if (grupo) {
+              var xg = el.getBoundingClientRect().left;
+              if (!groupLeft[grupo] || xg < groupLeft[grupo].x) groupLeft[grupo] = { cell: el, x: xg };
+            }
+          }
+          if (!cornerTh && Object.keys(groupLeft).length === 0) return;   // no es la pantalla
+
+          // Celda de nº de cada fila VISIBLE (recorriendo filas → sin confundir con un
+          // texto igual en otra columna).
+          var numLeft = {};
+          var trs = document.querySelectorAll('table tbody tr');
+          for (i = 0; i < trs.length; i++) {
+            if (trs[i].getAttribute('data-av-oculto')) continue;
+            var tds = trs[i].children;
+            for (var c = 0; c < tds.length; c++) {
+              if (tds[c].hasAttribute('rowspan')) continue;
+              var n = __avCellNum(tds[c]);
+              if (n && conocidos[n]) { if (!numLeft[n]) numLeft[n] = { cell: tds[c] }; break; }
+            }
+          }
+          Object.keys(numLeft).forEach(function (v) {   // atributo (no dispara el observer)
+            if (numLeft[v].cell.getAttribute('data-cnt-numcell') !== '1') numLeft[v].cell.setAttribute('data-cnt-numcell', '1');
+          });
+
+          var wantControls = __avEditMode;
+          var addExist = document.querySelectorAll('[data-av-add]');
+          var rowExist = document.querySelectorAll('[data-av-row]');
+          var ocuExist = document.querySelectorAll('[data-av-ocultos]');
+
+          var need = false;
+          if (cornerTh && !cornerTh.querySelector('[data-av-pencil]')) need = true;
+          if (wantControls) {
+            Object.keys(groupLeft).forEach(function (g) { if (!groupLeft[g].cell.querySelector('[data-av-add]')) need = true; });
+            Object.keys(numLeft).forEach(function (v) { if (!numLeft[v].cell.querySelector('[data-av-row]')) need = true; });
+            for (i = 0; i < rowExist.length; i++) {
+              var wv = rowExist[i].getAttribute('data-av-row');
+              if (!numLeft[wv] || !numLeft[wv].cell.contains(rowExist[i])) { need = true; break; }
+            }
+            if (cornerTh && !cornerTh.querySelector('[data-av-ocultos]')) need = true;
+          } else if (addExist.length || rowExist.length || ocuExist.length) {
+            need = true;   // modo normal → hay que QUITAR los controles
+          }
+
+          if (need) {
+            __cntMutating = true;
+            try {
+              if (cornerTh && !cornerTh.querySelector('[data-av-pencil]')) cornerTh.appendChild(__avMakePencilBtn());
+              if (wantControls) {
+                for (var s = rowExist.length - 1; s >= 0; s--) {
+                  var w = rowExist[s], wid = w.getAttribute('data-av-row');
+                  if ((!numLeft[wid] || !numLeft[wid].cell.contains(w)) && w.parentNode) w.parentNode.removeChild(w);
+                }
+                Object.keys(groupLeft).forEach(function (g) {
+                  if (!groupLeft[g].cell.querySelector('[data-av-add]')) groupLeft[g].cell.appendChild(__avMakeAddBtn(g));
+                });
+                Object.keys(numLeft).forEach(function (v) {
+                  var cell = numLeft[v].cell;
+                  if (cell.querySelector('[data-av-row]')) return;
+                  // DENTRO del flex interior (junto al nº) → misma línea, no agranda la fila.
+                  var host = cell.querySelector('div[class*="justify-between"]') ||
+                             (cell.firstElementChild && cell.firstElementChild.firstElementChild) || cell;
+                  host.appendChild(__avMakeRowCtrls(v, !__AV_FLEET[v]));
+                });
+                if (cornerTh && !cornerTh.querySelector('[data-av-ocultos]')) cornerTh.appendChild(__avMakeOcultosBtn());
+              } else {
+                for (var a = addExist.length - 1; a >= 0; a--) if (addExist[a].parentNode) addExist[a].parentNode.removeChild(addExist[a]);
+                for (var r = rowExist.length - 1; r >= 0; r--) if (rowExist[r].parentNode) rowExist[r].parentNode.removeChild(rowExist[r]);
+                for (var o = ocuExist.length - 1; o >= 0; o--) if (ocuExist[o].parentNode) ocuExist[o].parentNode.removeChild(ocuExist[o]);
+              }
+            } finally {
+              setTimeout(function () { __cntMutating = false; }, 50);
+            }
+          }
+          if (cornerTh) {
+            // Reflejar el modo actual en el aspecto del lápiz (estilo/atributo → seguro).
+            var pb = cornerTh.querySelector('[data-av-pencil]');
+            if (pb && pb.getAttribute('data-av-pencil-on') !== (__avEditMode ? '1' : '0')) __avStylePencil(pb);
+            // Nº de quitados: SOLO atributo (el ::after lo pinta) → cero mutaciones de árbol.
+            if (wantControls) {
+              var ob = cornerTh.querySelector('[data-av-ocultos]');
+              var nq = String(__avListaOcultos(ctx).length);
+              if (ob && ob.getAttribute('data-n') !== nq) ob.setAttribute('data-n', nq);
+            }
+          }
+        } catch (e) { __cntMutating = false; }
+      }
+
       function injectAddVehControls() {
+        __avInjectControlsV2(); return;   // v2.1 en TODAS las ramas (14-oct-2026); lo de abajo (v1.7) ya no se usa
         try {
           if (!__uaEsEstadoCompleto()) return; // solo en ESTADO COMPLETO (3 turnos)
 
@@ -4608,123 +5276,6 @@
           }
           __avZTaplicar(el);
         }
-      }
-
-      // ═══ Camiones QUITADOS (parche-ocultos, v2.2.4G) ═══
-      // Copiado TAL CUAL del canónico (v2.1 + cambio de oct-2026): lee la config
-      // compartida (avisor_config/flota) y las marcas del día, y oculta esas filas en
-      // todas las pantallas de servicios. Rama G → solo lectura (sin auto-inserción).
-      var __AV_CFG_LS = 'avisor_flota_cfg';
-      var __avCfg = null;
-      var __avCfgVivo = false;
-      var __avCfgArrancado = false;
-      var __avCfgReintentoEn = 0;
-      function __avCfgNorm(d) {
-        var out = { extra: {}, ocultos: {} };
-        try {
-          var ex = (d && d.extra) || {};
-          Object.keys(ex).forEach(function (v) {
-            var e = ex[v];
-            if (!__avValidVid(v) || !e || typeof e !== 'object') return;
-            out.extra[v] = { grupo: (e.grupo === 'TRASERAS' ? 'TRASERAS' : 'LATERALES'),
-                             desde: (typeof e.desde === 'string' ? e.desde : '0000-00-00') };
-          });
-          var oc = (d && d.ocultos) || {};
-          Object.keys(oc).forEach(function (v) {
-            var o = oc[v];
-            if (!__avValidVid(v) || !o || typeof o !== 'object') return;
-            out.ocultos[v] = { desde: (typeof o.desde === 'string' ? o.desde : '0000-00-00') };
-          });
-        } catch (e) {}
-        return out;
-      }
-      function __avCfgGet() {
-        if (!__avCfg) {
-          var c = null;
-          try { c = JSON.parse(localStorage.getItem(__AV_CFG_LS) || 'null'); } catch (e) {}
-          __avCfg = __avCfgNorm(c);
-        }
-        return __avCfg;
-      }
-      function __avCfgRef(db) {
-        return db.collection('artifacts').doc(__UA_APPID)
-                 .collection('public').doc('data')
-                 .collection('avisor_config').doc('flota');
-      }
-      function __avCfgArrancar() {
-        if (__avCfgArrancado || Date.now() < __avCfgReintentoEn) return;
-        __avCfgArrancado = true;
-        function fallo() { __avCfgArrancado = false; __avCfgReintentoEn = Date.now() + 30000; }
-        __uaEnsureFirebase().then(function () {
-          var db = __uaInitFirebase();
-          if (!db) { fallo(); return; }
-          __avCfgRef(db).onSnapshot(function (snap) {
-            try {
-              __avCfg = __avCfgNorm(snap.exists ? snap.data() : null);
-              __avCfgVivo = true;
-              __avCtxMemo = null;
-              try { localStorage.setItem(__AV_CFG_LS, JSON.stringify(__avCfg)); } catch (e2) {}
-            } catch (e) {}
-          }, fallo);
-        }).catch(fallo);
-      }
-      function __avEstadoVid(vid, ctx) {
-        var cfg = __avCfgGet();
-        var st = { vid: vid, fija: !!__AV_FLEET[vid], extra: cfg.extra[vid] || null,
-                   enOrden: !!ctx.enOrden[vid], ocultoHoy: !!ctx.ocultosDia[vid],
-                   mostrarHoy: !!ctx.mostrarDia[vid], ocultoPerm: null };
-        var op = cfg.ocultos[vid];
-        st.ocultoPerm = (op && ctx.iso && ctx.iso >= op.desde) ? op : null;
-        st.oculto = st.ocultoHoy || (!!st.ocultoPerm && !st.mostrarHoy);
-        st.adhoc = st.enOrden && !st.fija && !st.extra;   // añadido solo para este día
-        return st;
-      }
-      function __avFilaVid(tr, conocidos) {
-        var tds = tr.children;
-        for (var i = 0; i < tds.length; i++) {
-          if (tds[i].hasAttribute('rowspan')) continue;   // etiqueta de grupo
-          var n = __avCellNum(tds[i]);
-          if (n && conocidos[n]) return n;
-        }
-        return null;
-      }
-      function __avAplicarOcultos() {
-        try {
-          if (!__uaTurnoPantallaIndividual() && !__uaEsEstadoCompleto()) return;
-          __avCfgArrancar();
-          var ctx = __avDiaCtx();
-          if (!ctx.iso) return;
-          var conocidos = {};
-          Object.keys(__AV_FLEET).forEach(function (v) { conocidos[v] = 1; });
-          Object.keys(ctx.enOrden).forEach(function (v) { conocidos[v] = 1; });
-
-          var trs = document.querySelectorAll('table tbody tr');
-          var filas = [], gi = -1, restantes = 0, i, c;
-          for (i = 0; i < trs.length; i++) {
-            var tr = trs[i], lab = null;
-            for (c = 0; c < tr.children.length; c++) { if (tr.children[c].hasAttribute('rowspan')) { lab = tr.children[c]; break; } }
-            var primera = false;
-            if (lab) { gi++; restantes = Math.max(1, parseInt(lab.getAttribute('rowspan'), 10) || 1); primera = true; }
-            var vid = __avFilaVid(tr, conocidos);
-            filas.push({ tr: tr, oculto: !!vid && __avEstadoVid(vid, ctx).oculto, grupo: (restantes > 0 ? gi : -1), primera: primera });
-            if (restantes > 0) restantes--;
-          }
-          var todoOculto = {};
-          filas.forEach(function (f) {
-            if (f.grupo < 0) return;
-            if (!(f.grupo in todoOculto)) todoOculto[f.grupo] = true;
-            if (!f.oculto) todoOculto[f.grupo] = false;
-          });
-          filas.forEach(function (f) {
-            var want = '';
-            if (f.oculto) want = (f.primera && f.grupo >= 0 && !todoOculto[f.grupo]) ? 'vaciar' : 'collapse';
-            if ((f.tr.getAttribute('data-av-oculto') || '') !== want) {
-              if (want) f.tr.setAttribute('data-av-oculto', want); else f.tr.removeAttribute('data-av-oculto');
-            }
-          });
-
-          if (!__AV_RAMA_G && ctx.esHoy && ctx.cargado && __avCfgVivo) __avAutoInsertar(ctx);
-        } catch (e) {}
       }
 
       function runInjections() {
